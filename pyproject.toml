@@ -8,7 +8,7 @@ description = "An implementation of protocol 9 of FSD based on Python."
 authors = [{name = "tonestory6809", email = "175278158+tonestory6809@users.noreply.github.com"}]
 license = {text = "MIT"}
 readme = "README.md"
-requires-python = ">3.9.1"
+requires-python = ">=3.10"
 keywords = []
 dynamic = ["version"]
 classifiers = [
@@ -17,27 +17,27 @@ classifiers = [
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Documentation",
     "Typing :: Typed",
 ]
 dependencies = [
     "haversine~=2.9",
-    "tomli~=2.2; python_version < \"3.11\"",
+    "tomli~=2.4; python_version < \"3.11\"",
     "metar~=1.11",
     "sqlalchemy[asyncio]~=2.0",
-    "aiohttp~=3.12",
-    "typing-extensions~=4.13",
-    "argon2-cffi~=23.1",
-    "dependency-injector~=4.47",
-    "structlog~=25.3",
+    "aiohttp~=3.13",
+    "typing-extensions~=4.15",
+    "argon2-cffi~=25.1",
+    "dependency-injector~=4.48",
+    "structlog~=25.5",
     "colorama~=0.4; sys_platform == \"win32\"",
     "better-exceptions~=0.3",
-    "uvloop~=0.21; sys_platform != \"win32\"",
+    "uvloop~=0.22; sys_platform != \"win32\"",
 ]
 
 [project.urls]
@@ -49,16 +49,16 @@ Discussions = "https://github.com/cfcsim/pyfsd/discussions"
 
 [project.optional-dependencies]
 sqlite3 = [
-    "aiosqlite~=0.21",
+    "aiosqlite~=0.22",
 ]
 postgresql = [
-    "asyncpg~=0.30",
+    "asyncpg~=0.31",
 ]
 mysql = [
     "asyncmy~=0.2",
 ]
 oracle = [
-    "oracledb~=3.1",
+    "oracledb~=3.4",
 ]
 mssql = [
     "aioodbc~=0.5",
@@ -87,7 +87,7 @@ exclude = [
 ]
 
 [tool.ruff]
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = ["ALL"]
@@ -112,7 +112,7 @@ parentdir_prefix = "pyfsd-"
 [tool.mypy]
 namespace_packages = true
 exclude = "scripts"
-python_version = "3.9"
+python_version = "3.10"
 strict = true
 disallow_any_generics = false
 
@@ -122,14 +122,14 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
-    "mypy~=1.15",
-    "ruff~=0.11",
-    "hypothesis~=6.131",
-    "codespell>=2.4.1",
+    "mypy~=1.19",
+    "ruff~=0.15",
+    "hypothesis~=6.151",
+    "codespell~=2.4",
 ]
 docs = [
-    "mkdocs-material~=9.6",
-    "mkdocstrings[python]~=0.29",
+    "mkdocs-material~=9.7",
+    "mkdocstrings[python]~=1.0",
     "mkdocs-minify-plugin~=0.8",
     "markdown-callouts~=0.4",
     "mkdocs~=1.6",
