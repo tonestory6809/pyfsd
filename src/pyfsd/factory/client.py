@@ -99,7 +99,7 @@ class ClientFactory:
 
     def heartbeat(self) -> None:
         """Send heartbeat to clients."""
-        random_int: int = randint(-214743648, 2147483647)  # noqa: S311
+        random_int: int = randint(-214743648, 2147483647)
         self.broadcast(
             make_packet(
                 FSDClientCommand.WIND_DELTA + "SERVER",
@@ -164,7 +164,7 @@ class ClientFactory:
         else:
             return True
 
-    async def check_auth(self, username: str, password: str) -> Optional[int]:
+    async def check_auth(self, username: str, password: str) -> int | None:
         """Check if password and username is correct."""
 
         # This function updates hash (argon2)

@@ -1,9 +1,9 @@
 """Tools to collect PyFSD plugins."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from importlib import import_module
 from pkgutil import iter_modules
-from typing import TYPE_CHECKING, Callable, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 def iter_submodules(
     path: Iterable[str],
     name: str,
-    error_handler: Optional[Callable[[str], None]] = None,
+    error_handler: Callable[[str], None] | None = None,
 ) -> Iterable["ModuleType"]:
     """Yields {name}'s submodules on path.
 
@@ -27,7 +27,6 @@ def iter_submodules(
     for module_info in iter_modules(path, name + "."):
         try:
             yield import_module(module_info.name)
-        # ruff: noqa: PERF203
         except BaseException:
             if error_handler:
                 error_handler(module_info.name)

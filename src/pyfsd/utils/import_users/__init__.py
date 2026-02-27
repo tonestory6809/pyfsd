@@ -58,7 +58,6 @@ def main() -> None:
     with db_engine.connect() as conn:
         for user in users:
             if args.verbose:
-                # ruff: noqa: T201
                 print("Converting", *user)
             try:
                 conn.execute(
@@ -69,11 +68,9 @@ def main() -> None:
                     )
                 )
             except IntegrityError:
-                # ruff: noqa: T201
                 print("Callsign already exist:", user[0])
             else:
                 import_users += 1
         conn.commit()
 
-    # ruff: noqa: T201
     print(f"Done. ({import_users})")

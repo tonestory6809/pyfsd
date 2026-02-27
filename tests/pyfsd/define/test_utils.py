@@ -107,7 +107,7 @@ class TestUtils(TestCase):
                 self.assertFalse(keeper.tasks)
         loop.close()
 
-    def test_MRand(self) -> None:  # noqa: N802
+    def test_MRand(self) -> None:
         """Test if MRand works."""
         mrand = MRand()
         mrand.srand(0)

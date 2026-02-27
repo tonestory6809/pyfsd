@@ -1,21 +1,19 @@
-# ruff: noqa: S101
 """PyFSD client protocol."""
 
 from asyncio import Queue, create_task
 from asyncio import sleep as asleep
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from inspect import isawaitable
 from typing import (
     TYPE_CHECKING,
-    Callable,
+    Concatenate,
     Optional,
     TypeVar,
-    Union,
     cast,
 )
 
 from structlog import get_logger
-from typing_extensions import Concatenate, ParamSpec
+from typing_extensions import ParamSpec
 
 from pyfsd._version import version as pyfsd_version
 from pyfsd.define.broadcast import (
@@ -73,7 +71,7 @@ def check_packet(
     [
         Callable[
             Concatenate[_T_ClientProtocol, tuple[bytes, ...], P],
-            Union[Awaitable[HandleResult], HandleResult],
+            Awaitable[HandleResult] | HandleResult,
         ]
     ],
     Callable[
@@ -103,7 +101,7 @@ def check_packet(
     def decorator(
         func: Callable[
             Concatenate[_T_ClientProtocol, tuple[bytes, ...], P],
-            Union[Awaitable[HandleResult], HandleResult],
+            Awaitable[HandleResult] | HandleResult,
         ],
     ) -> Callable[
         Concatenate[_T_ClientProtocol, tuple[bytes, ...], P],
@@ -127,8 +125,8 @@ def check_packet(
                     return (False, False)
             result = func(self, packet, *args, **kwargs)
             if isawaitable(result):
-                return await cast("Awaitable[HandleResult]", result)
-            return cast("HandleResult", result)
+                return await result
+            return result
 
         return realfunc
 
@@ -151,7 +149,7 @@ class ClientProtocol(LineProtocol):
     worker_task: Optional["Task[None]"]
     worker_queue: Queue[bytes]
     transport: "Transport"
-    client: Optional[Client]
+    client: Client | None
 
     def __init__(self, factory: "ClientFactory") -> None:
         """Create a ClientProtocol instance."""
@@ -219,7 +217,7 @@ class ClientProtocol(LineProtocol):
         self.reset_timeout_killer()
         self.worker_queue.put_nowait(line)
 
-    def connection_lost(self, exc: Optional[BaseException] = None) -> None:
+    def connection_lost(self, exc: BaseException | None = None) -> None:
         """Handle connection lost."""
         if self.timeout_killer_task:
             self.timeout_killer_task.cancel()
@@ -344,7 +342,7 @@ class ClientProtocol(LineProtocol):
         self,
         to_limiter: str,
         *lines: bytes,
-        custom_at_checker: Optional[BroadcastChecker] = None,
+        custom_at_checker: BroadcastChecker | None = None,
     ) -> bool:
         """Multicast lines.
 
@@ -395,7 +393,7 @@ class ClientProtocol(LineProtocol):
         *,
         require_parts: int = 2,
         multicast_able: bool = True,
-        custom_at_checker: Optional[BroadcastChecker] = None,
+        custom_at_checker: BroadcastChecker | None = None,
     ) -> HandleResult:
         """Handle a (multi/uni)cast request.
 
@@ -432,7 +430,6 @@ class ClientProtocol(LineProtocol):
         to_packet = make_packet(
             command + self.client.callsign,
             to_callsign,
-            # ruff: noqa: PLR2004
             *packet[2:] if packet_len > 2 else [b""],
         )
 
@@ -451,11 +448,9 @@ class ClientProtocol(LineProtocol):
         )
 
     @check_packet(7, need_login=False)
-    # ruff: noqa: PLR0911, PLR0912, C901
     async def handle_add_client(
         self,
         packet: tuple[bytes, ...],
-        # ruff: noqa: FBT001, N803
         is_AA: bool,
     ) -> HandleResult:
         """Handle add client request.
@@ -729,7 +724,7 @@ class ClientProtocol(LineProtocol):
         return True, True
 
     @check_packet(8)
-    def handle_ATC_position_update(  # noqa: N802
+    def handle_ATC_position_update(
         self,
         packet: tuple[bytes, ...],
     ) -> HandleResult:

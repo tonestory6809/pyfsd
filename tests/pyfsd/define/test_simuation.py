@@ -8,7 +8,7 @@ from pyfsd.define.simulation import Int32MRand
 class TestSimulation(TestCase):
     """Test if pyfsd.define.simulation works."""
 
-    def test_Int32MRand(self) -> None:  # noqa: N802
+    def test_Int32MRand(self) -> None:
         """Test if MRand works."""
         mrand = Int32MRand()
         mrand.srand(0)

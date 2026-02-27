@@ -28,7 +28,7 @@ Tip: how the plugin architecture works:
 """
 
 from asyncio import CancelledError, create_task, gather
-from collections.abc import Awaitable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping
 from inspect import getfile
 from os import getcwd
 from random import choices
@@ -36,8 +36,6 @@ from string import ascii_letters
 from sys import exc_info
 from typing import (
     TYPE_CHECKING,
-    Callable,
-    Optional,
     TypedDict,
     TypeVar,
 )
@@ -95,7 +93,6 @@ def deal_exception(name: str) -> None:
     )
 
 
-# ruff: noqa: PTH109
 _cwd = getcwd()
 
 
@@ -127,10 +124,10 @@ class PluginManager:
         awaitable_services: Registered awaitable services.
     """
 
-    all_plugins: Optional[tuple[Plugin, ...]] = None
-    sorted_plugins: Optional[SortedPlugins] = None
+    all_plugins: tuple[Plugin, ...] | None = None
+    sorted_plugins: SortedPlugins | None = None
 
-    # ruff: noqa: C901, PLR0912, PLR0915, BLE001
+    # ruff: noqa: BLE001
     async def pick_plugins(self, plugin_config_root: dict) -> None:
         """Pick all plugins into self.all_plugins & self.sorted_plugins."""
 
@@ -161,7 +158,6 @@ class PluginManager:
             if not hasattr(plugin, "expected_config"):
                 setattr1(plugin, "expected_config", None)
 
-            # ruff: noqa: PLR2004
             if (
                 (not (plugin_name_ok := isinstance(plugin.name, str)))
                 or (not isinstance(plugin.api, tuple))
@@ -225,7 +221,6 @@ class PluginManager:
             if plugin.name in used_name:
                 new_name = plugin.name
                 while new_name in used_name:
-                    # ruff: noqa: S311
                     new_name = f"{plugin.name}_{''.join(choices(ascii_letters, k=5))}"
                 await logger.awarning(
                     f"Replacing duplicated plugin name {plugin.name} with {new_name}"
@@ -297,7 +292,6 @@ class PluginManager:
         for plugin, handler in self.sorted_plugins["handlers"].get(event_name, ()):
             try:
                 await handler(*args, **kwargs)
-            # ruff: noqa: PERF203
             except PreventEvent as prevent_result:
                 return PluginHandledEventResult(
                     **prevent_result.result,

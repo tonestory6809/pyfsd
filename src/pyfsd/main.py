@@ -163,7 +163,6 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
         raise
 
 
-# ruff: noqa: C901
 def main() -> None:
     """Main function of PyFSD."""
     # =============== Config

@@ -8,13 +8,11 @@ Attributes:
 """
 
 from asyncio import get_event_loop
-from collections.abc import Awaitable, Hashable, Iterable
+from collections.abc import Awaitable, Callable, Hashable, Iterable
 from functools import wraps
 from typing import (
     TYPE_CHECKING,
-    Callable,
     TypeVar,
-    Union,
     cast,
     overload,
 )
@@ -44,7 +42,7 @@ __all__ = [
 T = TypeVar("T")
 
 
-def str_to_int(string: Union[str, bytes], default_value: int = 0) -> int:
+def str_to_int(string: str | bytes, default_value: int = 0) -> int:
     """Convert a str or bytes into int.
 
     Args:
@@ -60,7 +58,7 @@ def str_to_int(string: Union[str, bytes], default_value: int = 0) -> int:
         return default_value
 
 
-def str_to_float(string: Union[str, bytes], default_value: float = 0.0) -> float:
+def str_to_float(string: str | bytes, default_value: float = 0.0) -> float:
     """Convert a str or bytes into float.
 
     Args:
@@ -100,7 +98,7 @@ CALLSIGN_MIN_LEN = 2
 CALLSIGN_MAX_LEN = 12
 
 
-def is_callsign_valid(callsign: Union[str, bytes]) -> bool:
+def is_callsign_valid(callsign: str | bytes) -> bool:
     """Check if a callsign is valid or not."""
     if not CALLSIGN_MIN_LEN < len(callsign) < CALLSIGN_MAX_LEN:
         return False

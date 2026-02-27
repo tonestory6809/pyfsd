@@ -1,5 +1,4 @@
 """fsd/wprofile implemented in Python."""
-# ruff: noqa: PLR2004
 
 import contextlib
 from copy import deepcopy
@@ -8,7 +7,7 @@ from datetime import datetime, timezone
 from functools import lru_cache
 from math import fabs, pi, sin
 from time import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from metar.Metar import Metar
 
@@ -138,7 +137,7 @@ class WeatherProfile:
 
     metar: str
     creation: int = field(default_factory=lambda: int(time()))
-    name: Optional[str] = None
+    name: str | None = None
     season: int = 0
     active: bool = False
     dew_point: int = 0
@@ -175,7 +174,6 @@ class WeatherProfile:
         """Clone myself."""
         return deepcopy(self)
 
-    # ruff: noqa: PLR0912, PLR0915, C901
     def feed_metar(self) -> None:
         """Parse metar.
 

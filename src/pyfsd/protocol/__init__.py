@@ -65,7 +65,6 @@ class LineProtocol(LineReceiver):
         """Save transport after the connection was made."""
         self.transport = transport
 
-    # ruff: noqa: ARG002
     def buffer_size_exceed(self, length: int) -> None:
         """Kill when line length exceed max length."""
         self.transport.close()

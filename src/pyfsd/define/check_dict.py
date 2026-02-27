@@ -21,9 +21,12 @@ Examples:
 
 from collections.abc import Hashable, Iterable, Mapping
 from sys import version_info
+from types import UnionType
+from typing import (
+    Any as TypeHint,
+)
 from typing import (
     Literal,
-    TypedDict,
     Union,
     get_args,
     get_origin,
@@ -39,14 +42,13 @@ if version_info >= (3, 11):
         get_type_hints as new_get_type_hints,
     )
 else:
-    # ruff: noqa: UP035
     from typing_extensions import (
         NotRequired,
         is_typeddict,
     )
 
     # We'll use only compatible signature so that should be ok
-    from typing_extensions import (  # type: ignore[assignment]
+    from typing_extensions import (
         get_type_hints as new_get_type_hints,
     )
 
@@ -67,9 +69,6 @@ __all__ = [
     "lookup_required",
 ]
 
-# Currently we have no choice to make Literal[...] works, so temporarily type it as Any
-TypeHint = object  # Union[TypeAlias, Type]
-
 
 def explain_type(typ: TypeHint) -> str:
     """Explain a type.
@@ -86,7 +85,7 @@ def explain_type(typ: TypeHint) -> str:
     if isinstance(typ, dict) or is_typeddict(typ):
         return "dict"
     if type_origin := get_origin(typ):  # elif (t_o is not None)
-        if type_origin is Union:
+        if type_origin is Union or type_origin is UnionType:
             return " or ".join(explain_type(sub_type) for sub_type in get_args(typ))
         if type_origin is Literal:
             return " or ".join(repr(sub_value) for sub_value in get_args(typ))
@@ -216,7 +215,7 @@ def check_simple_type(
         TypeError: When an unsupported type is specified.
     """
     if type_origin := get_origin(typ):  # elif (t_o is not None)
-        if type_origin is Union:
+        if type_origin is Union or type_origin is UnionType:
             for sub_type in get_args(typ):
                 if is_empty_iterable(check_simple_type(obj, sub_type, name=name)):
                     return
@@ -286,11 +285,7 @@ def assert_simple_type(
         raise error
 
 
-DictStructure = Union[
-    type[TypedDict],  # type: ignore[valid-type]
-    Mapping,  # It should be Mapping[Hashable, Union[TypeHint, DictStructure]
-    # (but it's invariant)
-]
+DictStructure = type | dict
 
 
 def lookup_required(structure: DictStructure) -> Iterable[Hashable]:
@@ -326,14 +321,13 @@ def lookup_required(structure: DictStructure) -> Iterable[Hashable]:
                 yield may_required_keys
 
 
-# ruff: noqa: C901, PLR0912
 def check_dict(
     dict_obj: dict,
     structure: DictStructure,
     *,
     name: str = "dict",
     allow_extra_keys: bool = False,
-) -> Iterable[Union[VerifyTypeError, VerifyKeyError]]:
+) -> Iterable[VerifyTypeError | VerifyKeyError]:
     """Check type of a dict accord TypedDict.
 
     Args:
@@ -374,7 +368,7 @@ def check_dict(
 
     def deal_dict_not_required(
         dic: Mapping,
-    ) -> Iterable[tuple[Hashable, Union[TypeHint, DictStructure]]]:
+    ) -> Iterable[tuple[Hashable, TypeHint | DictStructure]]:
         for key, typ in dic.items():
             if get_origin(typ) in (NotRequired, NotRequired_ext):
                 yield key, get_args(typ)[0]
@@ -404,7 +398,7 @@ def check_dict(
             else:
                 yield from check_dict(
                     value,
-                    type_,  # type: ignore[arg-type]
+                    type_,
                     name=f"{name}[{key!r}]",
                     allow_extra_keys=allow_extra_keys,
                 )

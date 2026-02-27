@@ -37,21 +37,23 @@ from pyfsd.define.check_dict import (
 class TestCheckDict(TestCase):
     """Test if pyfsd.define.check_dict works."""
 
-    # ruff: noqa: PYI051, UP006
-    complex_type = Union[int, Literal["1234", 5678], list[str], Dict[int, str]]
+    # ruff: noqa: UP006, UP007
+    complex_type = Union[
+        int | complex, Literal["1234", 5678], list[str], Dict[int, str]
+    ]
 
     def test_explain_type(self) -> None:
         """Tests if explain_type works."""
         self.assertEqual(
             explain_type(self.complex_type),
-            "int or '1234' or 5678 or list[str] or Dict[int, str]",
+            "int or complex or '1234' or 5678 or list[str] or Dict[int, str]",
         )
 
     def test_explain_error(self) -> None:
         """Tests if verify errors can correctly introduce themselves."""
         self.assertEqual(
             str(VerifyTypeError("abcd", self.complex_type, b"")),
-            "'abcd' must be int or '1234' or 5678 or list[str] "
+            "'abcd' must be int or complex or '1234' or 5678 or list[str] "
             "or Dict[int, str], not bytes",
         )
         for key_error in ("missing", "extra"):
@@ -72,7 +74,7 @@ class TestCheckDict(TestCase):
         # case like (correct_value, type, wrong_value, expected_exceptions)
         cases = (
             generate_simple_case(1, Union[int, bytes], "1"),
-            generate_simple_case(b"1", Union[int, bytes], "1"),
+            generate_simple_case(b"1", int | bytes, "1"),
             generate_simple_case("1234", Literal["1234", 5678], "5678"),
             (
                 ["123", "456"],
@@ -95,17 +97,17 @@ class TestCheckDict(TestCase):
                 ),
             ),
         )
-        for correctv, typ, wrongv, exp_exc in cases:
+        for correctv, typ, wrongv, expt_exc in cases:
             with self.subTest(typ=typ):
                 # Check correct value
                 with self.assertRaises(StopIteration):
                     next(iter(check_simple_type(correctv, typ, "obj")))
                 assert_simple_type(correctv, typ, "obj")
                 # Check wrong value
-                self.assertEqual(tuple(check_simple_type(wrongv, typ, "obj")), exp_exc)
+                self.assertEqual(tuple(check_simple_type(wrongv, typ, "obj")), expt_exc)
                 with self.assertRaises(VerifyTypeError) as cm:
                     assert_simple_type(wrongv, typ, "obj")
-                self.assertEqual(cm.exception, exp_exc[0])
+                self.assertEqual(cm.exception, expt_exc[0])
 
     def test_lookup_required(self) -> None:
         """Tests if lookup_required works."""
@@ -190,22 +192,15 @@ class TestCheckDict(TestCase):
         )
         # TypedDict
         for typed_dict in available_typeddict:
-            for dict_obj, exp_errs, allow_unexp_keys in cases:
-                valid = not exp_errs
+            for dict_obj, expt_errs, allow_unexpt_keys in cases:
+                valid = not expt_errs
                 with self.subTest(typeddict_source=typed_dict.__module__, valid=valid):
 
                     class ATypedDict(typed_dict):  # type: ignore[misc, valid-type]
-                        a: Union[int, str]
+                        a: int | str
                         b: Literal[1234, "5678"]
                         c: list[int]
                         d: NotRequired[dict[int, str]]  # type: ignore[valid-type]
-
-                    a_struct = {
-                        "a": Union[int, str],
-                        "b": Literal[1234, "5678"],
-                        "c": list[int],
-                        "d": NotRequired[dict[int, str]],
-                    }
 
                     if valid:
                         self.assertFalse(
@@ -214,17 +209,7 @@ class TestCheckDict(TestCase):
                                     dict_obj,
                                     ATypedDict,
                                     name="dict_obj",
-                                    allow_extra_keys=allow_unexp_keys,
-                                )
-                            )
-                        )
-                        self.assertFalse(
-                            tuple(
-                                check_dict(
-                                    dict_obj,
-                                    a_struct,
-                                    name="dict_obj",
-                                    allow_extra_keys=allow_unexp_keys,
+                                    allow_extra_keys=allow_unexpt_keys,
                                 )
                             )
                         )
@@ -232,13 +217,7 @@ class TestCheckDict(TestCase):
                             dict_obj,
                             ATypedDict,
                             name="dict_obj",
-                            allow_extra_keys=allow_unexp_keys,
-                        )
-                        assert_dict(
-                            dict_obj,
-                            a_struct,
-                            name="dict_obj",
-                            allow_extra_keys=allow_unexp_keys,
+                            allow_extra_keys=allow_unexpt_keys,
                         )
                     else:
                         self.assertEqual(
@@ -247,38 +226,20 @@ class TestCheckDict(TestCase):
                                     dict_obj,
                                     ATypedDict,
                                     name="dict_obj",
-                                    allow_extra_keys=allow_unexp_keys,
+                                    allow_extra_keys=allow_unexpt_keys,
                                 )
                             ),
-                            exp_errs,
-                        )
-                        self.assertEqual(
-                            tuple(
-                                check_dict(
-                                    dict_obj,
-                                    a_struct,
-                                    name="dict_obj",
-                                    allow_extra_keys=allow_unexp_keys,
-                                )
-                            ),
-                            exp_errs,
+                            expt_errs,
                         )
                         with self.assertRaises((VerifyKeyError, VerifyTypeError)) as cm:
                             assert_dict(
                                 dict_obj,
                                 ATypedDict,
                                 name="dict_obj",
-                                allow_extra_keys=allow_unexp_keys,
+                                allow_extra_keys=allow_unexpt_keys,
                             )
-                        self.assertEqual(cm.exception, exp_errs[0])
-                        with self.assertRaises((VerifyKeyError, VerifyTypeError)) as cm:
-                            assert_dict(
-                                dict_obj,
-                                a_struct,
-                                name="dict_obj",
-                                allow_extra_keys=allow_unexp_keys,
-                            )
-                        self.assertEqual(cm.exception, exp_errs[0])
+                        self.assertEqual(cm.exception, expt_errs[0])
+
         # dict
         structure = {
             "a": Union[int, str],
@@ -286,8 +247,8 @@ class TestCheckDict(TestCase):
             "c": list[int],
             "d": NotRequired[dict[int, str]],
         }
-        for dict_obj, exp_errs, allow_unexp_keys in cases:
-            valid = not exp_errs
+        for dict_obj, expt_errs, allow_unexpt_keys in cases:
+            valid = not expt_errs
 
             if valid:
                 self.assertFalse(
@@ -296,7 +257,7 @@ class TestCheckDict(TestCase):
                             dict_obj,
                             structure,
                             name="dict_obj",
-                            allow_extra_keys=allow_unexp_keys,
+                            allow_extra_keys=allow_unexpt_keys,
                         )
                     )
                 )
@@ -304,7 +265,7 @@ class TestCheckDict(TestCase):
                     dict_obj,
                     structure,
                     name="dict_obj",
-                    allow_extra_keys=allow_unexp_keys,
+                    allow_extra_keys=allow_unexpt_keys,
                 )
             else:
                 self.assertEqual(
@@ -313,16 +274,16 @@ class TestCheckDict(TestCase):
                             dict_obj,
                             structure,
                             name="dict_obj",
-                            allow_extra_keys=allow_unexp_keys,
+                            allow_extra_keys=allow_unexpt_keys,
                         )
                     ),
-                    exp_errs,
+                    expt_errs,
                 )
                 with self.assertRaises((VerifyKeyError, VerifyTypeError)) as cm:
                     assert_dict(
                         dict_obj,
                         structure,
                         name="dict_obj",
-                        allow_extra_keys=allow_unexp_keys,
+                        allow_extra_keys=allow_unexpt_keys,
                     )
-                self.assertEqual(cm.exception, exp_errs[0])
+                self.assertEqual(cm.exception, expt_errs[0])

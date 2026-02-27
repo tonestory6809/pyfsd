@@ -7,9 +7,9 @@ Attributes:
 """
 
 from asyncio import get_event_loop
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Callable, Optional, Union
+from typing import TYPE_CHECKING, Union
 
 from aiohttp import ClientSession
 
@@ -20,10 +20,10 @@ if TYPE_CHECKING:
 
 MetarInfoDict = dict[str, WeatherProfile]
 CronFetcher = Callable[
-    [Union[dict, "PyFSDMetarConfig"]], Awaitable[Union[MetarInfoDict, None]]
+    [Union[dict, "PyFSDMetarConfig"]], Awaitable[MetarInfoDict | None]
 ]
 OnceFetcher = Callable[
-    [Union[dict, "PyFSDMetarConfig"], str], Awaitable[Union[WeatherProfile, None]]
+    [Union[dict, "PyFSDMetarConfig"], str], Awaitable[WeatherProfile | None]
 ]
 
 __all__ = [
@@ -38,7 +38,7 @@ HTTP_OK = 200
 NOAA_METAR_BLOCK_LINES = 2
 
 
-async def noaa_fetch_once(_: object, icao: str) -> Optional[WeatherProfile]:
+async def noaa_fetch_once(_: object, icao: str) -> WeatherProfile | None:
     """Fetch single airport's metar from NOAA."""
     async with (
         ClientSession() as session,
@@ -51,7 +51,7 @@ async def noaa_fetch_once(_: object, icao: str) -> Optional[WeatherProfile]:
         return WeatherProfile((await resp.text(errors="ignore")).splitlines()[1])
 
 
-async def noaa_fetch_all(_: object) -> Optional[MetarInfoDict]:
+async def noaa_fetch_all(_: object) -> MetarInfoDict | None:
     """Fetch all airports' metar from NOAA."""
     utc_hour = datetime.now(timezone.utc).hour
 

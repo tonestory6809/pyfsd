@@ -8,7 +8,7 @@ Example:
     ClientFactory.broadcast(..., check_func=at_checker)
 """
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from pyfsd.object.client import Client
 
@@ -26,7 +26,7 @@ __all__ = [
     "is_multicast",
 ]
 
-BroadcastChecker = Callable[[Optional[Client], Client], bool]
+BroadcastChecker = Callable[[Client | None, Client], bool]
 
 
 def create_broadcast_range_checker(visual_range: int) -> BroadcastChecker:
@@ -39,7 +39,7 @@ def create_broadcast_range_checker(visual_range: int) -> BroadcastChecker:
         The broadcast checker.
     """
 
-    def checker(from_client: Optional[Client], to_client: Client) -> bool:
+    def checker(from_client: Client | None, to_client: Client) -> bool:
         if from_client is None:
             raise RuntimeError("broadcast_range_checker needs from_client")
         if not from_client.position_ok or not to_client.position_ok:
@@ -51,7 +51,7 @@ def create_broadcast_range_checker(visual_range: int) -> BroadcastChecker:
 
 
 def broadcast_position_checker(
-    from_client: Optional[Client],
+    from_client: Client | None,
     to_client: Client,
 ) -> bool:
     """A broadcast checker which checks visual range while broadcasting position.
@@ -80,7 +80,7 @@ def broadcast_position_checker(
     return distance < visual_range
 
 
-def broadcast_message_checker(from_client: Optional[Client], to_client: Client) -> bool:
+def broadcast_message_checker(from_client: Client | None, to_client: Client) -> bool:
     """A broadcast checker which checks visual range while broadcasting message.
 
     Parameters:
@@ -115,13 +115,13 @@ def broadcast_checkers(*checkers: BroadcastChecker) -> BroadcastChecker:
         The broadcast checker.
     """
 
-    def checker(from_client: Optional[Client], to_client: Client) -> bool:
+    def checker(from_client: Client | None, to_client: Client) -> bool:
         return all(checker(from_client, to_client) for checker in checkers)
 
     return checker
 
 
-def all_ATC_checker(_: Optional[Client], to_client: Client) -> bool:  # noqa: N802
+def all_ATC_checker(_: Client | None, to_client: Client) -> bool:
     """A broadcast checker which only broadcast to ATC.
 
     Parameters:
@@ -133,7 +133,7 @@ def all_ATC_checker(_: Optional[Client], to_client: Client) -> bool:  # noqa: N8
     return to_client.is_controller
 
 
-def all_pilot_checker(_: Optional[Client], to_client: Client) -> bool:
+def all_pilot_checker(_: Client | None, to_client: Client) -> bool:
     """A broadcast checker which only broadcast to pilot.
 
     Parameters:
@@ -145,7 +145,7 @@ def all_pilot_checker(_: Optional[Client], to_client: Client) -> bool:
     return not to_client.is_controller
 
 
-def at_checker(from_client: Optional[Client], to_client: Client) -> bool:
+def at_checker(from_client: Client | None, to_client: Client) -> bool:
     """A broadcast checker which checks visual range when dest startswith @.
 
     Parameters:

@@ -10,9 +10,7 @@ from collections.abc import Iterable, Sequence
 from enum import Enum
 from typing import (
     AnyStr,
-    Optional,
     TypeVar,
-    Union,
     cast,
     overload,
 )
@@ -188,7 +186,7 @@ class CompatibleString:
         """Return len(self)."""
         return len(self.string)
 
-    def __getitem__(self, index: Union[int, slice]) -> "CompatibleString":
+    def __getitem__(self, index: int | slice) -> "CompatibleString":
         """Return self[index]."""
         return self.__class__(self.string[index])
 
@@ -228,7 +226,7 @@ class CompatibleString:
         """Return n * self."""
         return self.__class__(self.string * n)
 
-    def __mod__(self, args: Union[tuple, object]) -> "CompatibleString":
+    def __mod__(self, args: tuple | object) -> "CompatibleString":
         """Return self % args."""
         return self.__class__(self.string % args)
 
@@ -294,7 +292,7 @@ class FSDClientCommand(CompatibleString, Enum):
     WIND_DELTA = "#DL"
 
 
-def make_packet(*parts: Union[AnyStr, FSDClientCommand]) -> AnyStr:
+def make_packet(*parts: AnyStr | FSDClientCommand) -> AnyStr:
     """Join parts together and add split sign between every two parts."""
     result = CompatibleString("")
     for part in parts:
@@ -308,27 +306,27 @@ def make_packet(*parts: Union[AnyStr, FSDClientCommand]) -> AnyStr:
 def break_packet(
     packet: AnyStr,
     possibly_commands: Iterable[AnyStr],
-) -> tuple[Optional[AnyStr], tuple[AnyStr, ...]]: ...
+) -> tuple[AnyStr | None, tuple[AnyStr, ...]]: ...
 
 
 @overload
 def break_packet(
     packet: AnyStr,
     possibly_commands: Iterable[FSDClientCommand],
-) -> tuple[Optional[FSDClientCommand], tuple[AnyStr, ...]]: ...
+) -> tuple[FSDClientCommand | None, tuple[AnyStr, ...]]: ...
 
 
 @overload
 def break_packet(
     packet: AnyStr,
-    possibly_commands: Iterable[Union[AnyStr, FSDClientCommand]],
-) -> tuple[Optional[Union[AnyStr, FSDClientCommand]], tuple[AnyStr, ...]]: ...
+    possibly_commands: Iterable[AnyStr | FSDClientCommand],
+) -> tuple[AnyStr | FSDClientCommand | None, tuple[AnyStr, ...]]: ...
 
 
 def break_packet(
     packet: AnyStr,
-    possibly_commands: Iterable[Union[AnyStr, FSDClientCommand]],
-) -> tuple[Optional[Union[AnyStr, FSDClientCommand]], tuple[AnyStr, ...]]:
+    possibly_commands: Iterable[AnyStr | FSDClientCommand],
+) -> tuple[AnyStr | FSDClientCommand | None, tuple[AnyStr, ...]]:
     """Break a packet into command and parts.
 
         #APzzzzzzzzzzzz1:zzzzzzz3:zzzzzzz4
@@ -344,7 +342,7 @@ def break_packet(
         tuple[command or None, tuple[every_part, ...]]
     """
     packet_type = type(packet)
-    command: Optional[Union[AnyStr, FSDClientCommand]] = None
+    command: AnyStr | FSDClientCommand | None = None
     splited_packet: list[AnyStr]
     for possibly_command in possibly_commands:
         command_str: AnyStr

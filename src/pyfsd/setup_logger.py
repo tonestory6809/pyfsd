@@ -4,7 +4,7 @@
 from logging import CRITICAL, DEBUG, ERROR, INFO, NOTSET, WARNING
 from logging.config import dictConfig
 from sys import version_info
-from typing import Optional, TypedDict, Union
+from typing import TypedDict
 
 from structlog import (
     configure,
@@ -52,7 +52,7 @@ class TimeFormatConfig(TypedDict):
         key: Target key in event_dict for added timestamps.
     """
 
-    fmt: Optional[str]
+    fmt: str | None
     utc: bool
     key: str
 
@@ -67,14 +67,13 @@ class PyFSDLoggerConfig(TypedDict):
         extract_record: Extract thread and process names and add them to the event dict.
     """
 
-    handlers: dict[str, Union[dict, HandlerConfig]]  # Allow extra keys
-    logger: Union[dict, LoggerConfig]
+    handlers: dict[str, dict | HandlerConfig]  # Allow extra keys
+    logger: dict | LoggerConfig
     include_extra: NotRequired[bool]
     extract_record: NotRequired[bool]
     time: NotRequired[TimeFormatConfig]
 
 
-# ruff: noqa: C901
 def make_filtering_stdlib_bound_logger(min_level: int) -> type[stdlib.BoundLogger]:
     """Create a new BoundLogger that only logs min_level or higher."""
     if min_level == NOTSET:
@@ -90,7 +89,7 @@ def make_filtering_stdlib_bound_logger(min_level: int) -> type[stdlib.BoundLogge
         def log(
             self,
             level: int,
-            event: Union[str, None] = None,
+            event: str | None = None,
             *args: object,
             **kw: object,
         ) -> object:
@@ -229,8 +228,8 @@ def setup_logger(config: PyFSDLoggerConfig, *, finalize: bool = False) -> None:
                     "foreign_pre_chain": pre_chain,
                 },
             },
-            "handlers": config["handlers"],  # type: ignore[typeddict-item]
-            "loggers": {"": config["logger"]},  # type: ignore[dict-item]
+            "handlers": config["handlers"],
+            "loggers": {"": config["logger"]},
         }
     )
     configure(

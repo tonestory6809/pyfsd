@@ -9,7 +9,6 @@ from typing import (
     Optional,
     TypedDict,
     TypeVar,
-    Union,
 )
 from warnings import filterwarnings
 
@@ -53,7 +52,7 @@ class PyFSDMetarConfig(TypedDict):
     mode: Literal["cron", "once"]
     fallback_once: NotRequired[bool]
     fetchers: list
-    cron_time: NotRequired[Union[float, int]]
+    cron_time: NotRequired[float | int]
 
 
 def suppress_metar_parser_warning() -> None:
@@ -83,11 +82,11 @@ class MetarManager:
     fetchers: MetarFetchers
     used_fetchers: MetarFetchers
     metar_cache: MetarInfoDict
-    config: Union[dict, PyFSDMetarConfig]
-    cron_time: Optional[float]
+    config: dict | PyFSDMetarConfig
+    cron_time: float | None
     cron_task: Optional["Task[NoReturn]"]
 
-    def __init__(self, config: Union[dict, PyFSDMetarConfig]) -> None:
+    def __init__(self, config: dict | PyFSDMetarConfig) -> None:
         """Create a MetarManager instance.
 
         Args:
@@ -149,7 +148,6 @@ class MetarManager:
         for name, fetcher in self.used_fetchers["cron"].items():
             try:
                 metars = await fetcher(self.config)
-            # ruff: noqa: PERF203
             except (VerifyKeyError, VerifyTypeError) as err:
                 await logger.aerror(
                     f"Metar fetcher {name} doesn't work because {err!s}"

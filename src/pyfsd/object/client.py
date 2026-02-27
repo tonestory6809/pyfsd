@@ -3,7 +3,7 @@
 from dataclasses import dataclass, field
 from math import sqrt
 from time import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from asyncio import Transport
@@ -40,7 +40,6 @@ class FlightPlan:
     route: bytes
 
 
-# ruff: noqa: PLR0913
 @dataclass
 class Client:
     """This dataclass stores a client."""
@@ -62,9 +61,9 @@ class Client:
     visual_range: int = 40
     flags: int = 0
     pbh: int = 0
-    flight_plan: Optional[FlightPlan] = None
-    sector: Optional[bytes] = None
-    ident_flag: Optional[bytes] = None
+    flight_plan: FlightPlan | None = None
+    sector: bytes | None = None
+    ident_flag: bytes | None = None
     start_time: int = field(default_factory=lambda: int(time()))
     last_updated: int = field(default_factory=lambda: int(time()))
 
@@ -140,7 +139,7 @@ class Client:
         self.flags = flags
         self.last_updated = int(time())
 
-    def update_ATC_position(  # noqa: N802
+    def update_ATC_position(
         self,
         frequency: int,
         facility_type: int,
@@ -157,7 +156,6 @@ class Client:
         self.altitude = altitude
         self.last_updated = int(time())
 
-    # ruff: noqa: PLR0911, PLR2004
     def get_range(self) -> int:
         """Get visual range."""
         if not self.is_controller:

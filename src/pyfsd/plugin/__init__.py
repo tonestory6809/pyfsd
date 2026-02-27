@@ -7,12 +7,10 @@ Attributes:
     EventResult: event handle result for handleable events.
 """
 
-from collections.abc import Awaitable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import (
-    Callable,
     Literal,
-    Optional,
     TypedDict,
     TypeVar,
     Union,
@@ -46,7 +44,7 @@ class PreventEvent(BaseException):
 
     result: dict
 
-    def __init__(self, result: Optional[dict] = None) -> None:
+    def __init__(self, result: dict | None = None) -> None:
         """Create a PreventEvent instance."""
         if result is None:
             result = {}
@@ -75,7 +73,7 @@ class Plugin:
     name: str
     api: tuple[int, int]
     version: tuple[int, str]
-    expected_config: Union[type[TypedDict], dict, None]  # type: ignore[valid-type]
+    expected_config: type[TypedDict] | dict | None  # type: ignore[valid-type]
 
     def __hash__(self) -> int:
         """Return hash of this plugin."""
@@ -98,7 +96,7 @@ class Plugin:
         """Return the canonical string representation of this plugin."""
         return f"<PyFSDPlugin {self.name} v{self.version[1]} ({self.version[0]})>"
 
-    async def setup(self) -> Optional[EventListenersDict]:
+    async def setup(self) -> EventListenersDict | None:
         """Setup this plugin.
 
         Returns:
@@ -116,7 +114,7 @@ class StubPlugin(Plugin):
     name: str
     api: tuple[int, int]
     version: tuple[int, str]
-    expected_config: Union[type[TypedDict], dict, None]  # type: ignore[valid-type]
+    expected_config: type[TypedDict] | dict | None  # type: ignore[valid-type]
 
 
 @dataclass(frozen=True, eq=False, repr=False)
@@ -131,7 +129,7 @@ class SimplePlugin(Plugin):
     name: str
     api: tuple[int, int]
     version: tuple[int, str]
-    expected_config: Union[type[TypedDict], dict, None]  # type: ignore[valid-type]
+    expected_config: type[TypedDict] | dict | None  # type: ignore[valid-type]
     listeners: EventListenersDict = field(  # type: ignore[assignment]
         default_factory=lambda: {"auditers": {}, "handlers": {}}
     )

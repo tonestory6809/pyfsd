@@ -1,5 +1,4 @@
 """This module tests pyfsd.define.packet."""
-# ruff: noqa: N802
 
 from unittest import TestCase
 
