@@ -102,11 +102,11 @@ class ClientFactory:
         random_int: int = randint(-214743648, 2147483647)
         self.broadcast(
             make_packet(
-                FSDClientCommand.WIND_DELTA + "SERVER",
-                "*",
-                f"{random_int % 11 - 5}",
-                f"{random_int % 21 - 10}",
-            ).encode("ascii"),
+                FSDClientCommand.WIND_DELTA + b"SERVER",
+                b"*",
+                b"%d" % (random_int % 11 - 5),
+                b"%d" % (random_int % 21 - 10),
+            ),
         )
 
     def __call__(self) -> ClientProtocol:
