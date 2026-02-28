@@ -4,7 +4,7 @@ _src_path: https://github.com/pawamoy/copier-pdm.git
 author_email: 175278158+tonestory6809@users.noreply.github.com
 author_fullname: tonestory6809
 author_username: tonestory6809
-copyright_date: '2023-2025'
+copyright_date: '2023-2026'
 copyright_holder: tonestory6809
 copyright_holder_email: 175278158+tonestory6809@users.noreply.github.com
 copyright_license: MIT License
@@ -15,6 +15,6 @@ python_package_command_line_name: pyfsd
 python_package_distribution_name: pyfsd
 python_package_import_name: pyfsd
 repository_name: pyfsd
-repository_namespace: cfcsim
+repository_namespace: tonestory6809
 repository_provider: github.com
 

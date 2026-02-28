@@ -41,11 +41,11 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/cfcsim/pyfsd"
-Documentation = "https://cfcsim.github.io/pyfsd"
-Repository = "https://github.com/cfcsim/pyfsd"
-Issues = "https://github.com/cfcsim/pyfsd/issues"
-Discussions = "https://github.com/cfcsim/pyfsd/discussions"
+Homepage = "https://github.com/tonestory6809/pyfsd"
+Documentation = "https://tonestory6809.github.io/pyfsd"
+Repository = "https://github.com/tonestory6809/pyfsd"
+Issues = "https://github.com/tonestory6809/pyfsd/issues"
+Discussions = "https://github.com/tonestory6809/pyfsd/discussions"
 
 [project.optional-dependencies]
 sqlite3 = [

@@ -1,12 +1,12 @@
 # yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
 site_name: "PyFSD"
 site_description: "用 Python 写成的 FSD 协议9实现"
-site_url: "https://cfcsim.github.io/pyfsd/"
-repo_url: "https://github.com/cfcsim/pyfsd"
-repo_name: "cfcsim/pyfsd"
+site_url: "https://tonestory6809.github.io/pyfsd/"
+repo_url: "https://github.com/tonestory6809/pyfsd"
+repo_name: "tonestory6809/pyfsd"
 site_dir: "site"
 watch: [mkdocs.yml, README.md, CONTRIBUTING.md, CHANGELOG.md, src/pyfsd]
-copyright: Copyright &copy; 2023-2025 tonestory6809
+copyright: Copyright &copy; 2023-2026 tonestory6809
 edit_uri: edit/async_dev/docs/
 
 nav:
@@ -112,7 +112,7 @@ plugins:
 extra:
   social:
   - icon: fontawesome/brands/github
-    link: https://github.com/cfcsim/pyfsd/
+    link: https://github.com/tonestory6809/pyfsd/
   - icon: fontawesome/brands/python
     link: https://pypi.org/project/pyfsd/
   version:
