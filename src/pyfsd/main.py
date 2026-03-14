@@ -12,11 +12,12 @@ from asyncio import (
     create_task,
     current_task,
     gather,
-    get_event_loop,
-    set_event_loop_policy,
+    get_running_loop,
     wait,
 )
-from contextlib import suppress
+from asyncio import (
+    new_event_loop as aio_new_event_loop,
+)
 from signal import SIGHUP, SIGINT, SIGTERM
 from typing import TypedDict, cast
 
@@ -34,9 +35,9 @@ from .metar.manager import PyFSDMetarConfig, suppress_metar_parser_warning
 from .setup_logger import PyFSDLoggerConfig, setup_logger
 
 try:
-    # Python 3.11+
     from tomllib import loads  # type: ignore[import-not-found,unused-ignore]
 except ImportError:
+    # Python 3.11+
     from tomli import loads  # type: ignore[no-redef,import-not-found,unused-ignore]
 
 
@@ -81,7 +82,7 @@ blacklist = []
 [pyfsd.metar]
 mode = "cron"
 cron_time = 3600
-fetchers = ["NOAA"]
+fetchers = ["noaa"]
 
 [pyfsd.logger.logger]
 handlers = ["default"]
@@ -109,7 +110,7 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
     async with container.db_engine().begin() as conn:
         await conn.run_sync(metadata.create_all)
     # =============== Startup
-    loop = get_event_loop()
+    loop = get_running_loop()
     client_server = await loop.create_server(
         container.client_factory(), port=config["pyfsd"]["client"]["port"]
     )
@@ -212,12 +213,12 @@ def main() -> None:
     setup_logger(config["pyfsd"]["logger"])
 
     # =============== Startup
-    with suppress(ImportError):
-        from uvloop import EventLoopPolicy
+    try:
+        from uvloop import uv_new_event_loop
 
-        set_event_loop_policy(EventLoopPolicy())
-
-    loop = get_event_loop()
+        loop = uv_new_event_loop()
+    except ImportError:
+        loop = aio_new_event_loop()
 
     async def runner() -> None:
         try:

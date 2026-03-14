@@ -7,7 +7,7 @@ Attributes:
         them before stop.
 """
 
-from asyncio import get_event_loop
+from asyncio import get_running_loop
 from collections.abc import Awaitable, Callable, Hashable, Iterable
 from functools import wraps
 from typing import (
@@ -215,7 +215,7 @@ def asyncify(func: Callable[P, T]) -> Callable[P, Awaitable[T]]:
 
     @wraps(func)
     async def _call(*args: P.args, **kwargs: P.kwargs) -> T:
-        loop = get_event_loop()
+        loop = get_running_loop()
         return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
     return _call

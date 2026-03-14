@@ -6,7 +6,7 @@ Attributes:
     OnceFetcher: Type of once mode metar fetcher.
 """
 
-from asyncio import get_event_loop
+from asyncio import get_running_loop
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Union
@@ -65,7 +65,7 @@ async def noaa_fetch_all(_: object) -> MetarInfoDict | None:
         if resp.status != HTTP_OK:
             return None
         all_metar: MetarInfoDict = {}
-        loop = get_event_loop()
+        loop = get_running_loop()
         metar_blocks = (await resp.text(errors="ignore")).split("\n\n")
 
         def parser() -> None:
