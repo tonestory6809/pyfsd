@@ -13,6 +13,7 @@ from asyncio import (
     current_task,
     gather,
     get_running_loop,
+    set_event_loop,
     wait,
 )
 from asyncio import (
@@ -219,6 +220,8 @@ def main() -> None:
         loop = uv_new_event_loop()
     except ImportError:
         loop = aio_new_event_loop()
+
+    set_event_loop(loop)
 
     async def runner() -> None:
         try:
