@@ -203,7 +203,6 @@ class PluginManager:
                         plugin_config,
                         plugin.expected_config,
                         name=f"plugin[{plugin.name!r}]",
-                        allow_extra_keys=True,
                     )
                 )
                 if config_errors:

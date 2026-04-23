@@ -5,6 +5,7 @@ from argparse import ArgumentParser
 from argon2 import PasswordHasher
 from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
+from typing_extensions import TypedDict
 
 from pyfsd.db_tables import users_table
 from pyfsd.define.check_dict import assert_dict
@@ -41,12 +42,23 @@ def main() -> None:
 
     assert_dict(
         config,
-        {
-            "pyfsd": {
-                "database": {"url": str},
-            }
-        },
-        allow_extra_keys=True,
+        TypedDict(  # type: ignore[operator]
+            "BasicConfig",
+            {
+                "pyfsd": TypedDict(  # type: ignore[operator]
+                    "BasicPyFSDConfig",
+                    {
+                        "database": TypedDict(  # type: ignore[operator]
+                            "BasicDatabaseConfig",
+                            {"url": str},
+                            extra_items=object,
+                        ),
+                    },
+                    extra_items=object,
+                )
+            },
+            extra_items=object,
+        ),
     )
 
     reader = formats[args.format]

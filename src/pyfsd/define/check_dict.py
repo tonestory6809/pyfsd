@@ -1,7 +1,7 @@
 """Tools to perform runtime TypedDict type check.
 
 It can be used to perform config check.
-Only TypedDict, Literal, NotRequired, Union, List and Dict are supported.
+Only TypedDict, Literal, (Not)Required, Union, List and Dict are supported.
 
 Attributes:
     DictStructure: Type of a object describes structure of a dict, can be TypedDict
@@ -20,39 +20,23 @@ Examples:
 """
 
 from collections.abc import Hashable, Iterable, Mapping
-from sys import version_info
 from types import UnionType
-from typing import (
-    Any as TypeHint,
-)
+from typing import Any as TypeHint
 from typing import (
     Literal,
     Union,
     get_args,
     get_origin,
-    get_type_hints,
 )
+from typing import get_type_hints as legacy_get_type_hints
 
-if version_info >= (3, 11):
-    from typing import (  # type: ignore[attr-defined,unused-ignore]
-        NotRequired,
-        is_typeddict,
-    )
-    from typing import (
-        get_type_hints as new_get_type_hints,
-    )
-else:
-    from typing_extensions import (
-        NotRequired,
-        is_typeddict,
-    )
-
-    # We'll use only compatible signature so that should be ok
-    from typing_extensions import (
-        get_type_hints as new_get_type_hints,
-    )
-
-from typing_extensions import NotRequired as NotRequired_ext
+from typing_extensions import (
+    NoExtraItems,
+    NotRequired,
+    Required,
+    get_type_hints,
+    is_typeddict,
+)
 
 from .utils import is_empty_iterable
 
@@ -185,7 +169,9 @@ class VerifyKeyError(KeyError):
         Returns:
             The formatted string, includes name, error type
         """
-        return f"{self.dict_name}[{self.key!r}] is {self.type}"
+        if self.type == "missing":
+            return f"missing expected key {self.dict_name}[{self.key!r}]"
+        return f"unexpected key {self.dict_name}[{self.key!r}]"
 
     def __eq__(self, other: object) -> bool:
         """Return self==other."""
@@ -288,8 +274,26 @@ def assert_simple_type(
 DictStructure = type | dict
 
 
-def lookup_required(structure: DictStructure) -> Iterable[Hashable]:
-    """Yields all required key in a TypedDict.
+def _lookup_typeddict_required_legacy(typeddict: type) -> Iterable[str]:
+    """Lookup required keys in typing.TypedDict for py3.10.
+
+    When typing_extensions.(Not)Required is used with typing.TypedDict on py3.10,
+    __required_keys__ is not relieable.
+    """
+
+    # typing.get_type_hints in py3.10 won't strip typing_extensions.(Not)Required
+    if typeddict.__total__:  # type: ignore[attr-defined]
+        for key, type_ in legacy_get_type_hints(typeddict).items():
+            if get_origin(type_) is not NotRequired:
+                yield key
+        return
+    for key, type_ in legacy_get_type_hints(typeddict).items():
+        if get_origin(type_) is Required:
+            yield key
+
+
+def lookup_required(structure: DictStructure) -> Iterable[str]:
+    """Yields all required key in a TypedDict, in sorted order.
 
     Args:
         structure: The type structure, TypedDict or dict.
@@ -298,26 +302,16 @@ def lookup_required(structure: DictStructure) -> Iterable[Hashable]:
         Keys that are required, str normally.
     """
     if is_typeddict(structure):
-        # Python < 3.9 not supported
-        # ---------
-        # Mypy bug, ignore it
-        if not structure.__total__:  # type: ignore[union-attr]
-            # Nothing is required
-            return
         if NotRequired.__module__ == "typing":  # Python 3.11+, not need to Workaround
-            yield from structure.__required_keys__  # type: ignore[union-attr]
+            yield from sorted(structure.__required_keys__)  # type: ignore[union-attr]
             return
-        # Python 3.9, 3.10
-        type_hints = get_type_hints(structure)
-        for may_required_keys in structure.__required_keys__:  # type: ignore[union-attr]
-            if get_origin(type_hints[may_required_keys]) not in (
-                NotRequired,
-                NotRequired_ext,
-            ):
-                yield may_required_keys
+        yield from sorted(
+            _lookup_typeddict_required_legacy(structure)  # type: ignore[arg-type]
+        )
+        return
     else:
-        for may_required_keys, type_ in structure.items():  # type: ignore[union-attr]
-            if get_origin(type_) not in (NotRequired, NotRequired_ext):
+        for may_required_keys, type_ in sorted(structure.items()):  # type: ignore[union-attr]
+            if get_origin(type_) is not NotRequired:
                 yield may_required_keys
 
 
@@ -326,7 +320,6 @@ def check_dict(
     structure: DictStructure,
     *,
     name: str = "dict",
-    allow_extra_keys: bool = False,
 ) -> Iterable[VerifyTypeError | VerifyKeyError]:
     """Check type of a dict accord TypedDict.
 
@@ -334,7 +327,6 @@ def check_dict(
         dict_obj: The dict to be checked.
         structure: Expected type.
         name: Name of the dict.
-        allow_extra_keys: Allow extra keys in dict_obj or not.
 
     Yields:
         Detected type error, in VerifyTypeError / VerifyKeyError
@@ -346,41 +338,41 @@ def check_dict(
         >>> class AType(TypedDict):
         ...     a: int
         ...
-        >>> list(check_dict({ "a": 114514 }, AType, allow_extra_keys=False))
+        >>> list(check_dict({ "a": 114514 }, AType))
         []
-        >>> list(check_dict({ "a": "" }, AType, allow_extra_keys=False, name="mything"))
+        >>> list(check_dict({ "a": "" }, AType, name="mything"))
         [VerifyTypeError("mything['a']", <class 'int'>, '')]
         >>> list(check_dict({}, AType))
         [VerifyKeyError('dict', 'a', 'missing')]
         >>> list(check_dict(
         ...     { "a": 114514, "b": 1919810 },
+        ...     TypedDict("DictA", { "a": int }),
         ...     AType,
-        ...     allow_extra_keys=True
-        ... ))
-        []
-        >>> list(check_dict(
-        ...     { "a": 114514, "b": 1919810 },
-        ...     AType,
-        ...     allow_extra_keys=False
         ... ))
         [VerifyKeyError('dict', 'b', 'extra')]
+        >>> list(check_dict(
+        ...     { "a": 114514, "b": "1919810" },
+        ...     TypedDict("DictA", { "a": int }, extra_items=str),
+        ... ))
+        []
     """
 
     def deal_dict_not_required(
         dic: Mapping,
     ) -> Iterable[tuple[Hashable, TypeHint | DictStructure]]:
         for key, typ in dic.items():
-            if get_origin(typ) in (NotRequired, NotRequired_ext):
+            if get_origin(typ) in (Required, NotRequired):
                 yield key, get_args(typ)[0]
             else:
                 yield key, typ
 
+    # All keys presents in dict_obj but not in structure
     left_keys = list(dict_obj.keys())
     required_keys = tuple(lookup_required(structure))
-    # New get_type_hints will change NotRequired[...] into ...
+    structure_is_typeddict = is_typeddict(structure)
     for key, type_ in (
-        new_get_type_hints(structure).items()
-        if is_typeddict(structure)
+        get_type_hints(structure).items()
+        if structure_is_typeddict
         else deal_dict_not_required(structure)  # type: ignore[arg-type]
     ):
         try:
@@ -389,9 +381,7 @@ def check_dict(
             if key in required_keys:
                 yield VerifyKeyError(name, key, "missing")
             continue
-        else:
-            if not allow_extra_keys:
-                left_keys.remove(key)
+        left_keys.remove(key)
         if is_typeddict(type_) or isinstance(type_, dict):
             if not isinstance(value, dict):
                 yield VerifyTypeError(f"{name}[{key!r}]", type_, value)
@@ -400,13 +390,20 @@ def check_dict(
                     value,
                     type_,
                     name=f"{name}[{key!r}]",
-                    allow_extra_keys=allow_extra_keys,
                 )
         else:
             yield from check_simple_type(value, type_, name=f"{name}[{key!r}]")
-    if not allow_extra_keys and left_keys:
-        for left_key in left_keys:
-            yield VerifyKeyError(name, left_key, "extra")
+    if (
+        structure_is_typeddict
+        and (extra_items_type := getattr(structure, "__extra_items__", NoExtraItems))
+        is not NoExtraItems
+    ):
+        for key in left_keys:
+            yield from check_simple_type(
+                dict_obj[key], extra_items_type, name=f"{name}[{key!r}]"
+            )
+    else:
+        yield from (VerifyKeyError(name, key, "extra") for key in left_keys)
 
 
 def assert_dict(
@@ -414,7 +411,6 @@ def assert_dict(
     structure: DictStructure,
     *,
     name: str = "dict",
-    allow_extra_keys: bool = False,
 ) -> None:
     """Wrapper of check_dict, which raises once an error is generated.
 
@@ -424,7 +420,6 @@ def assert_dict(
         dict_obj: The dict to be checked.
         structure: Expected type.
         name: Name of the dict.
-        allow_extra_keys: Allow extra keys in dict_obj or not.
 
     Raises:
         VerifyTypeError: When found type error.
@@ -438,7 +433,6 @@ def assert_dict(
                     dict_obj,
                     structure,
                     name=name,
-                    allow_extra_keys=allow_extra_keys,
                 )
             )
         )
