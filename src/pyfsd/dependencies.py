@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING
 
 from dependency_injector import containers, providers
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from .factory.client import ClientFactory
 from .metar.manager import MetarManager
@@ -41,7 +41,7 @@ class Container(containers.DeclarativeContainer):
 
     config = RootPyFSDConfigProvider()
     db_engine = providers.Singleton(
-        create_async_engine, config.pyfsd.database.url, pool_pre_ping=True
+        async_engine_from_config, config.pyfsd.database, prefix=""
     )
     plugin_manager = providers.Singleton(PluginManager)
     metar_manager = providers.Singleton(MetarManager, config.pyfsd.metar)

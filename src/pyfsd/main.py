@@ -20,11 +20,11 @@ from asyncio import (
     new_event_loop as aio_new_event_loop,
 )
 from signal import SIGHUP, SIGINT, SIGTERM
-from typing import TypedDict, cast
+from typing import cast
 
 from dependency_injector.wiring import register_loader_containers
 from structlog import get_logger
-from typing_extensions import NotRequired
+from typing_extensions import NotRequired, TypedDict
 
 from ._version import version
 from .db_tables import metadata
@@ -42,7 +42,7 @@ except ImportError:
     from tomli import loads  # type: ignore[no-redef,import-not-found,unused-ignore]
 
 
-class PyFSDDatabaseConfig(TypedDict):
+class PyFSDDatabaseConfig(TypedDict, extra_items=object):  # type: ignore[call-arg]
     """PyFSD database config.
 
     Attributes:
@@ -99,6 +99,21 @@ formatter = "colored"
 
 async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -> None:
     """Launch PyFSD."""
+    # Specify a driver in DB url
+    db_url: str = config["pyfsd"]["database"]["url"]
+    scheme, url = db_url.split("://", 1)
+    if "+" not in scheme:  # if user does not specify driver
+        if scheme == "postgresql":
+            db_url = "postgresql+asyncpg://" + url
+        elif scheme in ("mysql", "mariadb"):
+            db_url = "mysql+asyncmy://" + url
+        elif scheme == "sqlite":
+            db_url = "sqlite+aiosqlite://" + url
+        elif scheme == "oracle":
+            db_url = "oracle+oracledb_async://" + url
+        elif scheme == "mssql":
+            db_url = "mssql+aioodbc://" + url
+        config["pyfsd"]["database"]["url"] = db_url
     # =============== Initialize dependencies
     container = Container()
     container.config.from_dict(config)
@@ -108,8 +123,13 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
     await pm.pick_plugins(config.get("plugin", {}))
     container.metar_manager().check_fetchers()
     # Initialize database
-    async with container.db_engine().begin() as conn:
-        await conn.run_sync(metadata.create_all)
+    try:
+        async with container.db_engine().begin() as conn:
+            await conn.run_sync(metadata.create_all)
+    except Exception as exc:
+        raise RuntimeError(
+            "Failed to initialize database, is it configured correctly?"
+        ) from exc
     # =============== Startup
     loop = get_running_loop()
     client_server = await loop.create_server(
@@ -134,9 +154,9 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
             )
     except CancelledError:
         # =========== Stop
-        container.client_factory().remove_all_clients()
-        await container.plugin_manager().trigger_event_auditers("before_stop", (), {})
         await logger.ainfo("Stopping")
+        await container.plugin_manager().trigger_event_auditers("before_stop", (), {})
+        container.client_factory().remove_all_clients()
         client_server.close()
         await client_server.wait_closed()
         for task in tasks_pyfsd:
@@ -190,24 +210,6 @@ def main() -> None:
         RootPyFSDConfig,
         name="config",
     )
-    # Replace database scheme with async dialect
-    db_url: str = config["pyfsd"]["database"]["url"]
-    if "://" not in db_url:
-        raise ValueError("Invalid database url")
-    scheme, url = db_url.split("://", 1)
-    if "+" not in scheme:  # if user didn't specified driver
-        if scheme == "postgresql":
-            db_url = "postgresql+asyncpg://" + url
-        elif scheme in ("mysql", "mariadb"):
-            db_url = "mysql+asyncmy://" + url
-        elif scheme == "sqlite":
-            db_url = "sqlite+aiosqlite://" + url
-        elif scheme == "oracle":
-            db_url = "oracle+oracledb_async://" + url
-        elif scheme == "mssql":
-            db_url = "mssql+aioodbc://" + url
-        # else we have nothing to do :)
-        config["pyfsd"]["database"]["url"] = db_url
 
     # =============== Logger
     suppress_metar_parser_warning()
