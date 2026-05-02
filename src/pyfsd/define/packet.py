@@ -15,7 +15,6 @@ __all__ = [
     "SPLIT_SIGN",
     "FSDClientCommand",
     "break_packet",
-    "join_lines",
     "make_packet",
 ]
 
@@ -103,23 +102,6 @@ def break_packet(
         command = possibly_command
         splited_packet[0] = splited_packet[0][len(command) :]
     return (command, tuple(splited_packet))
-
-
-def join_lines(*lines: bytes, newline: bool = True) -> bytes:
-    r"""Join lines together.
-
-    Args:
-        lines: The lines.
-        newline: Append '\r\n' to every line or not.
-
-    Returns:
-        The result.
-    """
-    result = b""
-    split_sign = b"\r\n"
-    for line in lines:
-        result += line + split_sign if newline else line
-    return result
 
 
 CLIENT_USED_COMMAND = [

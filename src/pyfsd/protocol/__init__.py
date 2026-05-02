@@ -4,7 +4,7 @@ from abc import ABCMeta, abstractmethod
 from asyncio import Protocol
 from typing import TYPE_CHECKING
 
-from pyfsd.define.packet import join_lines
+from pyfsd.define.utils import join_lines
 
 if TYPE_CHECKING:
     from asyncio import Transport

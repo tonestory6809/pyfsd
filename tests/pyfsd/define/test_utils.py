@@ -9,11 +9,13 @@ from pyfsd.define.utils import (
     MRand,
     assert_no_duplicate,
     asyncify,
+    atoi,
     calc_distance,
     is_callsign_valid,
     is_empty_iterable,
     iter_callable,
     iterables,
+    join_lines,
     mustdone_task_keeper,
     str_to_float,
     str_to_int,
@@ -67,6 +69,11 @@ class TestUtils(TestCase):
         """Test if iterables works."""
         self.assertEqual(list(iterables([1, 2], [3, 4])), [1, 2, 3, 4])
 
+    def test_join_lines(self) -> None:
+        """Test if join_lines works."""
+        self.assertEqual(join_lines(b"a", b"b"), b"a\r\nb\r\n")
+        self.assertEqual(join_lines(b"a", b"b", newline=False), b"ab")
+
     def test_asyncify(self) -> None:
         """Test if asyncify works."""
         k = False
@@ -112,3 +119,8 @@ class TestUtils(TestCase):
         mrand = MRand()
         mrand.srand(0)
         self.assertEqual(mrand(), 1726686868)
+
+    def test_atoi(self) -> None:
+        """Test if atoi works."""
+        self.assertEqual(atoi(b"    -11234string"), -11234)
+        self.assertEqual(atoi(b"+123 356"), 123)

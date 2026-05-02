@@ -6,7 +6,6 @@ from pyfsd.define.packet import (
     CLIENT_USED_COMMAND,
     FSDClientCommand,
     break_packet,
-    join_lines,
     make_packet,
 )
 
@@ -34,11 +33,6 @@ class TestPacket(TestCase):
             break_packet(b"$NMCSN1012:114514:1919810", FSDClientCommand),
             (None, (b"$NMCSN1012", b"114514", b"1919810")),
         )
-
-    def test_join_lines(self) -> None:
-        """Test if join_lines works."""
-        self.assertEqual(join_lines(b"a", b"b"), b"a\r\nb\r\n")
-        self.assertEqual(join_lines(b"a", b"b", newline=False), b"ab")
 
     def test_CLIENT_USED_COMMAND(self) -> None:
         """Test if CLIENT_USED_COMMAND works."""

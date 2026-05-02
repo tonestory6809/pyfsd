@@ -7,14 +7,15 @@ Attributes:
         them before stop.
 """
 
+import re
 from asyncio import get_running_loop
 from collections.abc import Awaitable, Callable, Hashable, Iterable
 from functools import wraps
+from itertools import chain as iterables
 from typing import (
     TYPE_CHECKING,
     TypeVar,
     cast,
-    overload,
 )
 
 from haversine import Unit, haversine
@@ -29,17 +30,20 @@ __all__ = [
     "MRand",
     "assert_no_duplicate",
     "asyncify",
+    "atoi",
     "calc_distance",
     "is_callsign_valid",
     "is_empty_iterable",
     "iter_callable",
     "iterables",
+    "join_lines",
     "mustdone_task_keeper",
     "str_to_float",
     "str_to_int",
     "task_keeper",
 ]
 T = TypeVar("T")
+atoi_pattern = re.compile(rb"(?a)\s*([-+]?\d+)")
 
 
 def str_to_int(string: str | bytes, default_value: int = 0) -> int:
@@ -72,6 +76,17 @@ def str_to_float(string: str | bytes, default_value: float = 0.0) -> float:
         return float(string)
     except ValueError:
         return default_value
+
+
+def atoi(s: bytes) -> int:
+    """atoi implementation that SIMILAR to what in ANSI C."""
+    match = atoi_pattern.match(s)
+    if not match:
+        return 0
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return -1
 
 
 def calc_distance(
@@ -159,27 +174,6 @@ def is_empty_iterable(iter_obj: Iterable) -> bool:
         return False
 
 
-@overload
-def iterables(*iterators: Iterable[T]) -> Iterable[T]: ...
-
-
-@overload
-def iterables(*iterators: Iterable) -> Iterable: ...
-
-
-def iterables(*iterators: Iterable) -> Iterable:
-    """Iterate multiple iterable objects at once.
-
-    Args:
-        iterators: Iterable objects.
-
-    Yields:
-        Iterate result.
-    """
-    for iterator in iterators:
-        yield from iterator
-
-
 def iter_callable(obj: object, *, ignore_private: bool = True) -> Iterable[Callable]:
     """Yields all callable attribute in a object.
 
@@ -196,6 +190,23 @@ def iter_callable(obj: object, *, ignore_private: bool = True) -> Iterable[Calla
         attr = getattr(obj, attr_name)
         if callable(attr):
             yield attr
+
+
+def join_lines(*lines: bytes, newline: bool = True) -> bytes:
+    r"""Join lines together.
+
+    Args:
+        lines: The lines.
+        newline: Append '\r\n' to every line or not.
+
+    Returns:
+        The result.
+    """
+    result = b""
+    split_sign = b"\r\n"
+    for line in lines:
+        result += line + split_sign if newline else line
+    return result
 
 
 P = ParamSpec("P")

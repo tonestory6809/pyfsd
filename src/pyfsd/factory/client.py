@@ -17,7 +17,8 @@ from sqlalchemy import select, update
 from structlog import get_logger
 
 from pyfsd.db_tables import users_table
-from pyfsd.define.packet import FSDClientCommand, join_lines, make_packet
+from pyfsd.define.packet import FSDClientCommand, make_packet
+from pyfsd.define.utils import join_lines
 from pyfsd.protocol.client import ClientProtocol
 
 if TYPE_CHECKING:
