@@ -135,7 +135,7 @@ class ClientFactory:
         have_one = False
         data = join_lines(*lines, newline=auto_newline)
         for client in self.clients.values():
-            if client == from_client:
+            if client is from_client:
                 continue
             if not check_func(from_client, client):
                 continue

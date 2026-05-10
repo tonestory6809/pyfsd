@@ -79,7 +79,7 @@ def get_season(month: int, *, swap: bool) -> int:
     raise ValueError(f"Invalid month {month}")
 
 
-@dataclass
+@dataclass(slots=True)
 class CloudLayer:
     """This dataclass describes a cloud layer."""
 
@@ -90,7 +90,7 @@ class CloudLayer:
     turbulence: int = 0
 
 
-@dataclass
+@dataclass(slots=True)
 class WindLayer:
     """This dataclass describes a wind layer.
 
@@ -108,7 +108,7 @@ class WindLayer:
     turbulence: int = 0
 
 
-@dataclass
+@dataclass(slots=True)
 class TempLayer:
     """This dataclass describes a temperature layer.
 
@@ -120,7 +120,7 @@ class TempLayer:
     temp: int = 0
 
 
-@dataclass
+@dataclass(slots=True)
 class WeatherProfile:
     """Profile of weather.
 

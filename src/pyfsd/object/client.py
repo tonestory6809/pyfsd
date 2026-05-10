@@ -14,7 +14,7 @@ Position = tuple[float, float]
 INVALID_ALTITUDE = 100000
 
 
-@dataclass
+@dataclass(slots=True)
 class FlightPlan:
     """This dataclass describes a flight plan.
 
@@ -40,7 +40,7 @@ class FlightPlan:
     route: bytes
 
 
-@dataclass
+@dataclass(slots=True)
 class Client:
     """This dataclass stores a client."""
 
