@@ -45,7 +45,7 @@ def create_broadcast_range_checker(visual_range: int) -> BroadcastChecker:
         if not from_client.position_ok or not to_client.position_ok:
             return False
         distance = calc_distance(from_client.position, to_client.position)
-        return distance < visual_range
+        return distance <= visual_range
 
     return checker
 
@@ -68,8 +68,8 @@ def broadcast_position_checker(
     if not from_client.position_ok or not to_client.position_ok:
         return False
     visual_range: int
-    x: int = to_client.get_range()
-    y: int = from_client.get_range()
+    x = to_client.get_range()
+    y = from_client.get_range()
     if to_client.is_controller:
         visual_range = to_client.visual_range
     elif not from_client.is_controller:
@@ -77,7 +77,7 @@ def broadcast_position_checker(
     else:
         visual_range = max(x, y)
     distance = calc_distance(from_client.position, to_client.position)
-    return distance < visual_range
+    return distance <= visual_range
 
 
 def broadcast_message_checker(from_client: Client | None, to_client: Client) -> bool:
@@ -102,7 +102,7 @@ def broadcast_message_checker(from_client: Client | None, to_client: Client) -> 
     else:
         visual_range = max(y, x)
     distance = calc_distance(from_client.position, to_client.position)
-    return distance < visual_range
+    return distance <= visual_range
 
 
 def broadcast_checkers(*checkers: BroadcastChecker) -> BroadcastChecker:
@@ -160,10 +160,10 @@ def at_checker(from_client: Client | None, to_client: Client) -> bool:
     if not from_client.position_ok or not to_client.position_ok:
         return False
     distance = calc_distance(from_client.position, to_client.position)
-    return distance < from_client.get_range()
+    return distance <= from_client.get_range()
 
 
-def is_multicast(callsign: str) -> bool:
+def is_multicast(callsign: bytes) -> bool:
     """Determine if dest callsign is multicast sign.
 
     Parameters:
@@ -172,4 +172,4 @@ def is_multicast(callsign: str) -> bool:
     Returns:
         Is multicast or not.
     """
-    return callsign in {"*", "*A"} or (callsign == "*P" or callsign.startswith("@"))
+    return callsign.startswith((b"*", b"@"))

@@ -21,8 +21,10 @@ from pyfsd.define.broadcast import (
     all_ATC_checker,
     all_pilot_checker,
     at_checker,
+    broadcast_checkers,
     broadcast_message_checker,
     broadcast_position_checker,
+    create_broadcast_range_checker,
     is_multicast,
 )
 from pyfsd.define.errors import FSDClientError
@@ -340,7 +342,7 @@ class ClientProtocol(LineProtocol):
 
     def multicast(
         self,
-        to_limiter: str,
+        to_limiter: bytes,
         *lines: bytes,
         custom_at_checker: BroadcastChecker | None = None,
     ) -> bool:
@@ -361,22 +363,22 @@ class ClientProtocol(LineProtocol):
         """
         if self.client is None:
             raise RuntimeError("No client registered.")
-        if to_limiter == "*":
+        if to_limiter.startswith(b"*"):
+            if to_limiter == b"*A":
+                return self.factory.broadcast(
+                    *lines,
+                    check_func=all_ATC_checker,
+                    from_client=self.client,
+                )
+            if to_limiter == b"*P":
+                return self.factory.broadcast(
+                    *lines,
+                    check_func=all_pilot_checker,
+                    from_client=self.client,
+                )
             # Default checker is lambda: True, so send to all client
             return self.factory.broadcast(*lines, from_client=self.client)
-        if to_limiter == "*A":
-            return self.factory.broadcast(
-                *lines,
-                check_func=all_ATC_checker,
-                from_client=self.client,
-            )
-        if to_limiter == "*P":
-            return self.factory.broadcast(
-                *lines,
-                check_func=all_pilot_checker,
-                from_client=self.client,
-            )
-        if to_limiter.startswith("@"):
+        if to_limiter.startswith(b"@"):
             return self.factory.broadcast(
                 *lines,
                 from_client=self.client,
@@ -424,8 +426,6 @@ class ClientProtocol(LineProtocol):
             return False, False
 
         to_callsign = packet[1]
-        # We'll only check if it's a multicast sign, so decode is acceptable
-        to_callsign_str = to_callsign.decode("ascii", "replace")
         # Prepare packet to be sent.
         to_packet = make_packet(
             command + self.client.callsign,
@@ -433,10 +433,10 @@ class ClientProtocol(LineProtocol):
             *packet[2:] if packet_len > 2 else [b""],
         )
 
-        if is_multicast(to_callsign_str):
+        if is_multicast(to_callsign):
             if multicast_able:
                 return True, self.multicast(
-                    to_callsign_str,
+                    to_callsign,
                     to_packet,
                     custom_at_checker=custom_at_checker,
                 )
@@ -652,7 +652,9 @@ class ClientProtocol(LineProtocol):
                 remarks,
                 route,
             ),
-            check_func=all_ATC_checker,
+            check_func=broadcast_checkers(
+                all_ATC_checker, create_broadcast_range_checker(400)
+            ),
             from_client=self.client,
         )
         return True, True
