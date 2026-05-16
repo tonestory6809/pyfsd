@@ -6,6 +6,7 @@ Attributes:
 
 from argparse import ArgumentParser
 from asyncio import (
+    AbstractEventLoop,
     CancelledError,
     Task,
     all_tasks,
@@ -216,8 +217,9 @@ def main() -> None:
     setup_logger(config["pyfsd"]["logger"])
 
     # =============== Startup
+    loop: AbstractEventLoop
     try:
-        from uvloop import uv_new_event_loop
+        from uvloop import new_event_loop as uv_new_event_loop
 
         loop = uv_new_event_loop()
     except ImportError:
