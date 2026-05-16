@@ -22,7 +22,7 @@ from pyfsd.define.utils import join_lines
 from pyfsd.protocol.client import ClientProtocol
 
 if TYPE_CHECKING:
-    from asyncio import Task
+    from asyncio import Task, Transport
 
     from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -48,7 +48,8 @@ class ClientFactory:
     """Factory of ClientProtocol.
 
     Attributes:
-        clients: All clients, Dict[callsign(bytes), Client]
+        clients: All logined clients, Dict[callsign(bytes), Client]
+        transports: All alive transports.
         heartbeat_task: Task to send heartbeat to clients.
         motd: The Message Of The Day.
         blacklist: IP blacklist.
@@ -59,6 +60,7 @@ class ClientFactory:
     """
 
     clients: dict[bytes, "Client"]
+    transports: list["Transport"]
     heartbeat_task: "Task[NoReturn] | None"
     metar_manager: "MetarManager"
     plugin_manager: "PluginManager"
@@ -77,6 +79,7 @@ class ClientFactory:
     ) -> None:
         """Create a ClientFactory instance."""
         self.clients = {}
+        self.transports = []
         self.heartbeat_task = None
         self.motd = motd.splitlines()
         self.blacklist = blacklist
@@ -215,5 +218,5 @@ class ClientFactory:
 
     def remove_all_clients(self) -> None:
         """Remove all clients."""
-        for client in self.clients.copy().values():
-            client.transport.close()
+        for transport in self.transports.copy():
+            transport.close()

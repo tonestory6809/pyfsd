@@ -207,6 +207,7 @@ class ClientProtocol(LineProtocol):
             self.transport.close()
             return
 
+        self.factory.transports.append(transport)
         self.worker_task = create_task(self.handle_line_worker_func())
         self.reset_timeout_killer()
         logger.info("New connection from %s.", ip)
@@ -221,6 +222,7 @@ class ClientProtocol(LineProtocol):
 
     def connection_lost(self, exc: BaseException | None = None) -> None:
         """Handle connection lost."""
+        self.factory.transports.remove(self.transport)
         if self.timeout_killer_task:
             self.timeout_killer_task.cancel()
             self.timeout_killer_task = None
