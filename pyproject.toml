@@ -26,18 +26,18 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "haversine~=2.9",
-    "tomli~=2.4; python_version < \"3.11\"",
-    "metar~=1.11",
-    "sqlalchemy[asyncio]~=2.0",
-    "aiohttp~=3.13",
-    "typing-extensions~=4.15",
-    "argon2-cffi~=25.1",
-    "dependency-injector~=4.48",
-    "structlog~=25.5",
-    "colorama~=0.4; sys_platform == \"win32\"",
-    "better-exceptions~=0.3",
-    "uvloop~=0.22; sys_platform != \"win32\"",
+    "haversine>=2.9.0",
+    "tomli>=2.4.1; python_version < \"3.11\"",
+    "metar>=2.0.1",
+    "sqlalchemy[asyncio]>=2.0.49",
+    "aiohttp>=3.13.5",
+    "typing-extensions>=4.15.0",
+    "argon2-cffi>=25.1.0",
+    "dependency-injector>=4.49.0",
+    "structlog>=25.5.0",
+    "colorama>=0.4.6; sys_platform == \"win32\"",
+    "better-exceptions>=0.3.3",
+    "uvloop>=0.22.1; sys_platform != \"win32\"",
 ]
 
 [project.urls]
@@ -49,19 +49,19 @@ Discussions = "https://github.com/tonestory6809/pyfsd/discussions"
 
 [project.optional-dependencies]
 sqlite3 = [
-    "aiosqlite~=0.22",
+    "aiosqlite>=0.22.1",
 ]
 postgresql = [
-    "asyncpg~=0.31",
+    "asyncpg>=0.31.0",
 ]
 mysql = [
-    "asyncmy~=0.2",
+    "asyncmy>=0.2.11",
 ]
 oracle = [
-    "oracledb~=3.4",
+    "oracledb>=4.0.0",
 ]
 mssql = [
-    "aioodbc~=0.5",
+    "aioodbc>=0.5.0",
 ]
 
 [tool.pdm.build]
@@ -121,18 +121,18 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
-    "mypy~=1.19",
-    "ruff~=0.15",
-    "hypothesis~=6.151",
-    "codespell~=2.4",
+    "mypy>=2.1.0",
+    "ruff>=0.15.13",
+    "hypothesis>=6.152.7",
+    "codespell>=2.4.2",
 ]
 docs = [
-    "mkdocs-material~=9.7",
-    "mkdocstrings[python]~=1.0",
-    "mkdocs-minify-plugin~=0.8",
-    "markdown-callouts~=0.4",
-    "mkdocs~=1.6",
-    "mkdocs-minify-plugin~=0.8",
-    "mike~=2.1",
+    "mkdocs-material>=9.7.6",
+    "mkdocstrings[python]>=1.0.4",
+    "mkdocs-minify-plugin>=0.8.0",
+    "markdown-callouts>=0.4.0",
+    "mkdocs>=1.6.1",
+    "mkdocs-minify-plugin>=0.8.0",
+    "mike>=2.2.0",
 ]
 
