@@ -15,12 +15,13 @@ from asyncio import (
     gather,
     get_running_loop,
     set_event_loop,
+    shield,
     wait,
 )
 from asyncio import (
     new_event_loop as aio_new_event_loop,
 )
-from signal import SIGHUP, SIGINT, SIGTERM
+from signal import SIGINT
 from typing import cast
 
 from dependency_injector.wiring import register_loader_containers
@@ -134,14 +135,15 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
     # =============== Startup
     loop = get_running_loop()
     client_server = await loop.create_server(
-        container.client_factory(), port=config["pyfsd"]["client"]["port"]
+        container.client_factory(),
+        port=config["pyfsd"]["client"]["port"],
     )
     await container.plugin_manager().trigger_event_auditers("before_start", (), {})
     await logger.ainfo(f"PyFSD {version}")
 
     plugins_count = pm.plugins_count()
     await logger.ainfo(
-        f"{pm.plugins_count()} plugins{': ' if plugins_count else ''}{pm!s}"
+        f"{plugins_count} plugins: {pm!s}" if plugins_count else "0 plugins"
     )
     tasks_pyfsd = (
         container.metar_manager().get_cron_task(),
@@ -149,22 +151,19 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
         create_task(client_server.serve_forever()),
     )
     try:
-        async with client_server:
-            await gather(
-                *tasks_pyfsd,
-            )
+        await shield(gather(*tasks_pyfsd, return_exceptions=True))
     except CancelledError:
         # =========== Stop
         await logger.ainfo("Stopping")
+        client_server.close()
         await container.plugin_manager().trigger_event_auditers("before_stop", (), {})
         container.client_factory().remove_all_clients()
-        client_server.close()
         await client_server.wait_closed()
         for task in tasks_pyfsd:
             task.cancel()
         for task in task_keeper.tasks:
             task.cancel()
-
+        await gather(*tasks_pyfsd, *task_keeper.tasks, return_exceptions=True)
         if wait_all_tasks_done:
             tasks = all_tasks()
             tasks.discard(cast("Task", current_task()))
@@ -180,7 +179,7 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
                 await logger.adebug(
                     f"Waited {total_wait_seconds} second, "
                     "but these tasks are still running",
-                    stack="\n".join(f"  {task!s}" for task in tasks),
+                    stack="\n".join(f"  {task!s}" for task in pending),
                 )
         await container.db_engine().dispose()
         raise
@@ -227,25 +226,41 @@ def main() -> None:
 
     set_event_loop(loop)
 
-    async def runner() -> None:
-        try:
-            await launch(cast("RootPyFSDConfig", config))
-        except CancelledError:
-            pass
-        except BaseException:
-            logger.exception("Error happened when launching PyFSD")
+    sigint_count = 0
 
-        await loop.shutdown_asyncgens()
-        await loop.shutdown_default_executor()
-        loop.stop()
+    def sigint_handler() -> None:
+        nonlocal sigint_count
+        if sigint_count:
+            raise KeyboardInterrupt()
+        main_task.cancel()
+        loop.call_soon_threadsafe(lambda: None)
+        sigint_count += 1
 
-    runner_task = loop.create_task(runner())
+    main_task = loop.create_task(launch(cast("RootPyFSDConfig", config)))
 
-    for signal in [SIGINT, SIGTERM, SIGHUP]:
-        loop.add_signal_handler(signal, runner_task.cancel)
-    loop.run_forever()  # complete after loop.stop()
+    loop.add_signal_handler(SIGINT, sigint_handler)
+    try:
+        loop.run_until_complete(main_task)
+    except CancelledError:
+        pass
+    except KeyboardInterrupt:
 
-    # =============== Stop
+        async def shutdown() -> None:
+            tasks = all_tasks()
+            tasks.discard(cast("Task", current_task()))
+            for task in tasks:
+                task.cancel()
+            await gather(*tasks, return_exceptions=True)
+
+        loop.run_until_complete(shutdown())
+
+    except BaseException:
+        logger.exception("Error happened when launching PyFSD")
+
+    # =============== Finalize
+    loop.run_until_complete(loop.shutdown_asyncgens())
+    loop.run_until_complete(loop.shutdown_default_executor())
+    set_event_loop(None)
     loop.close()
     # Ensure we have working loggers when cpython is shutting down
     setup_logger(config["pyfsd"]["logger"], finalize=True)
