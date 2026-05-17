@@ -1,13 +1,11 @@
 """PyFSD client protocol."""
 
-from asyncio import Queue, create_task
-from asyncio import sleep as asleep
+import asyncio
 from collections.abc import Awaitable, Callable
 from inspect import isawaitable
 from typing import (
     TYPE_CHECKING,
     Concatenate,
-    Optional,
     TypeVar,
     cast,
 )
@@ -45,8 +43,6 @@ from pyfsd.object.client import Client
 from . import LineProtocol
 
 if TYPE_CHECKING:
-    from asyncio import Task, Transport
-
     from pyfsd.factory.client import ClientFactory
     from pyfsd.plugin import PluginHandledEventResult, PyFSDHandledEventResult
 
@@ -147,10 +143,11 @@ class ClientProtocol(LineProtocol):
     """
 
     factory: "ClientFactory"
-    timeout_killer_task: Optional["Task[None]"]
-    worker_task: Optional["Task[None]"]
-    worker_queue: Queue[bytes]
-    transport: "Transport"
+    timeout_killer_task: asyncio.Task[None] | None
+    worker_task: asyncio.Task[None] | None
+    # TODO: migrate to Queue.shutdown
+    worker_queue: asyncio.Queue[bytes | None]
+    transport: asyncio.Transport
     client: Client | None
 
     def __init__(self, factory: "ClientFactory") -> None:
@@ -159,7 +156,7 @@ class ClientProtocol(LineProtocol):
         self.client = None
         self.timeout_killer_task = None
         self.worker_task = None
-        self.worker_queue = Queue()
+        self.worker_queue = asyncio.Queue()
         super().__init__()
         # timeout_killer_task and worker_task and transport will be
         # initialized in connection_made.
@@ -170,6 +167,10 @@ class ClientProtocol(LineProtocol):
 
         while True:
             line = await self.worker_queue.get()
+
+            # sentinel value used by connection_lost()
+            if line is None:
+                break
 
             # First try to let plugins to process
             plugin_result = await self.factory.plugin_manager.trigger_event_handlers(
@@ -198,7 +199,9 @@ class ClientProtocol(LineProtocol):
                 {},
             )
 
-    def connection_made(self, transport: "Transport") -> None:  # type: ignore[override]
+        self.worker_task = None
+
+    def connection_made(self, transport: asyncio.Transport) -> None:  # type: ignore[override]
         """Initialize something after the connection is made."""
         super().connection_made(transport)
         ip = self.transport.get_extra_info("peername")[0]
@@ -208,7 +211,7 @@ class ClientProtocol(LineProtocol):
             return
 
         self.factory.transports.append(transport)
-        self.worker_task = create_task(self.handle_line_worker_func())
+        self.worker_task = asyncio.create_task(self.handle_line_worker_func())
         self.reset_timeout_killer()
         logger.info("New connection from %s.", ip)
         self.factory.plugin_manager.trigger_event_auditers_nonblock(
@@ -227,8 +230,7 @@ class ClientProtocol(LineProtocol):
             self.timeout_killer_task.cancel()
             self.timeout_killer_task = None
         if self.worker_task:
-            self.worker_task.cancel()
-            self.worker_task = None
+            self.worker_queue.put_nowait(None)
 
         client = None
         if self.client is not None:
@@ -272,10 +274,10 @@ class ClientProtocol(LineProtocol):
         """Kill this client after 1 second by kill_func."""
 
         async def kill() -> None:
-            await asleep(1)
+            await asyncio.sleep(1)
             self.transport.close()
 
-        mustdone_task_keeper.add(create_task(kill()))
+        mustdone_task_keeper.add(asyncio.create_task(kill()))
 
     def get_description(self) -> str:
         """Get text description of this client."""
@@ -291,14 +293,14 @@ class ClientProtocol(LineProtocol):
         """Reset timeout killer."""
 
         async def timeout_killer() -> None:
-            await asleep(500)
+            await asyncio.sleep(500)
             self.send_line(b"# Timeout")
             await logger.ainfo(f"Kicking {self.get_description()}: timeout")
             self.kill_after_1sec()
 
         if self.timeout_killer_task:
             self.timeout_killer_task.cancel()
-        self.timeout_killer_task = create_task(timeout_killer())
+        self.timeout_killer_task = asyncio.create_task(timeout_killer())
 
     def send_error(
         self, errno: FSDClientError, *, env: bytes = b"", fatal: bool = False
@@ -996,10 +998,10 @@ class ClientProtocol(LineProtocol):
 
             def kill_it() -> None:
                 async def killer() -> None:
-                    await asleep(1)
+                    await asyncio.sleep(1)
                     transport_to_kill.close()
 
-                mustdone_task_keeper.add(create_task(killer()))
+                mustdone_task_keeper.add(asyncio.create_task(killer()))
 
         logger.info(
             "Kicking %s: killed by %s",
