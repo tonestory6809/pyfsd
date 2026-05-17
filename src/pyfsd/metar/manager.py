@@ -16,6 +16,7 @@ from structlog import get_logger
 from typing_extensions import NotRequired
 
 from pyfsd.define.check_dict import VerifyKeyError, VerifyTypeError
+from pyfsd.define.utils import logged_task
 
 from .fetch import (
     CronFetcher,
@@ -183,7 +184,7 @@ class MetarManager:
                 await self.cache_metar()
                 await asleep(self.cron_time)
 
-        self.cron_task = create_task(runner(), name="cron_metar_fetcher")
+        self.cron_task = logged_task(create_task(runner(), name="cron_metar_fetcher"))
         return self.cron_task
 
     async def fetch_once(

@@ -18,7 +18,7 @@ from structlog import get_logger
 
 from pyfsd.db_tables import users_table
 from pyfsd.define.packet import FSDClientCommand, make_packet
-from pyfsd.define.utils import join_lines
+from pyfsd.define.utils import join_lines, logged_task
 from pyfsd.protocol.client import ClientProtocol
 
 if TYPE_CHECKING:
@@ -98,7 +98,7 @@ class ClientFactory:
                 await asleep(70)
                 self.heartbeat()
 
-        self.heartbeat_task = create_task(heartbeater())
+        self.heartbeat_task = logged_task(create_task(heartbeater()))
         return self.heartbeat_task
 
     def heartbeat(self) -> None:

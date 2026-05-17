@@ -44,7 +44,7 @@ from structlog import get_logger
 
 from pyfsd import plugins
 from pyfsd.define.check_dict import check_dict
-from pyfsd.define.utils import mustdone_task_keeper
+from pyfsd.define.utils import logged_task, mustdone_task_keeper
 
 from . import (
     API_LEVEL,
@@ -341,7 +341,9 @@ class PluginManager:
     ) -> None:
         """Trigger a audit event and call auditers from plugins, not blocking."""
         mustdone_task_keeper.add(
-            create_task(self.trigger_event_auditers(event_name, args, kwargs))
+            logged_task(
+                create_task(self.trigger_event_auditers(event_name, args, kwargs)),
+            )
         )
 
     def __repr__(self) -> str:

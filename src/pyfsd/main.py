@@ -31,7 +31,7 @@ from typing_extensions import NotRequired, TypedDict
 from ._version import version
 from .db_tables import metadata
 from .define.check_dict import assert_dict
-from .define.utils import mustdone_task_keeper, task_keeper
+from .define.utils import logged_task, mustdone_task_keeper, task_keeper
 from .dependencies import Container
 from .factory.client import PyFSDClientConfig
 from .metar.manager import PyFSDMetarConfig, suppress_metar_parser_warning
@@ -148,7 +148,7 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
     tasks_pyfsd = (
         container.metar_manager().get_cron_task(),
         container.client_factory().get_heartbeat_task(),
-        create_task(client_server.serve_forever()),
+        logged_task(create_task(client_server.serve_forever())),
     )
     try:
         await shield(gather(*tasks_pyfsd, return_exceptions=True))

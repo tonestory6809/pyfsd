@@ -34,6 +34,7 @@ from pyfsd.define.packet import (
 )
 from pyfsd.define.utils import (
     is_callsign_valid,
+    logged_task,
     mustdone_task_keeper,
     str_to_float,
     str_to_int,
@@ -211,7 +212,9 @@ class ClientProtocol(LineProtocol):
             return
 
         self.factory.transports.append(transport)
-        self.worker_task = asyncio.create_task(self.handle_line_worker_func())
+        self.worker_task = logged_task(
+            asyncio.create_task(self.handle_line_worker_func())
+        )
         self.reset_timeout_killer()
         logger.info("New connection from %s.", ip)
         self.factory.plugin_manager.trigger_event_auditers_nonblock(
@@ -277,7 +280,7 @@ class ClientProtocol(LineProtocol):
             await asyncio.sleep(1)
             self.transport.close()
 
-        mustdone_task_keeper.add(asyncio.create_task(kill()))
+        mustdone_task_keeper.add(logged_task(asyncio.create_task(kill())))
 
     def get_description(self) -> str:
         """Get text description of this client."""
@@ -300,7 +303,9 @@ class ClientProtocol(LineProtocol):
 
         if self.timeout_killer_task:
             self.timeout_killer_task.cancel()
-        self.timeout_killer_task = asyncio.create_task(timeout_killer())
+        self.timeout_killer_task = logged_task(
+            asyncio.create_task(timeout_killer()),
+        )
 
     def send_error(
         self, errno: FSDClientError, *, env: bytes = b"", fatal: bool = False
@@ -1001,7 +1006,7 @@ class ClientProtocol(LineProtocol):
                     await asyncio.sleep(1)
                     transport_to_kill.close()
 
-                mustdone_task_keeper.add(asyncio.create_task(killer()))
+                mustdone_task_keeper.add(logged_task(asyncio.create_task(killer())))
 
         logger.info(
             "Kicking %s: killed by %s",

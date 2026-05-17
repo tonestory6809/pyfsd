@@ -209,6 +209,30 @@ def join_lines(*lines: bytes, newline: bool = True) -> bytes:
     return result
 
 
+_T_Task = TypeVar("_T_Task", bound="Task")
+
+
+def logged_task(task: _T_Task) -> _T_Task:
+    """Receive a Task, add exception handler to it and return."""
+
+    def callback(task: "Task") -> None:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is None:
+            return
+        task.get_loop().call_exception_handler(
+            {
+                "message": "Uncaught exception in Task",
+                "exception": exc,
+                "future": task,
+            }
+        )
+
+    task.add_done_callback(callback)
+    return task
+
+
 P = ParamSpec("P")
 
 
