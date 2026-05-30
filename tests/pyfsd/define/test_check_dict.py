@@ -65,6 +65,7 @@ class TestCheckDict(TestCase):
         ) -> tuple[object, object, object, tuple[VerifyTypeError]]:
             return (correctv, typ, wrongv, (VerifyTypeError("obj", typ, wrongv),))
 
+        SomeDict = TypedDict("SomeDict", {"a": int})
         # case like (correct_value, type, wrong_value, expected_exceptions)
         cases = (
             generate_simple_case(1, Union[int, bytes], "1"),
@@ -89,6 +90,12 @@ class TestCheckDict(TestCase):
                     VerifyTypeError("obj['2']", int, "2"),
                     VerifyTypeError("obj['2']", str, 2),
                 ),
+            ),
+            (
+                {1: {"a": 3}},
+                dict[int, SomeDict],
+                {1: {"a": "s"}},
+                (VerifyTypeError("obj[1]['a']", int, "s"),),
             ),
         )
         for correctv, typ, wrongv, expt_exc in cases:

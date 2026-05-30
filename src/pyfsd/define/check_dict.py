@@ -186,7 +186,7 @@ def check_simple_type(
     obj: object,
     typ: TypeHint,
     name: str = "object",
-) -> Iterable[VerifyTypeError]:
+) -> Iterable[VerifyTypeError | VerifyKeyError]:
     """Simple runtime type checker, supports Union, Literal, List, Dict.
 
     Args:
@@ -238,6 +238,11 @@ def check_simple_type(
                 )
         else:
             raise TypeError(f"Unsupported type: {type_origin!r}")
+    elif is_typeddict(typ) or isinstance(typ, dict):
+        if not isinstance(obj, dict):
+            yield VerifyTypeError(name, typ, obj)
+        else:
+            yield from check_dict(obj, typ, name=name)
     elif isinstance(typ, type):
         if not isinstance(obj, typ):
             yield VerifyTypeError(name, typ, obj)
@@ -382,17 +387,7 @@ def check_dict(
                 yield VerifyKeyError(name, key, "missing")
             continue
         left_keys.remove(key)
-        if is_typeddict(type_) or isinstance(type_, dict):
-            if not isinstance(value, dict):
-                yield VerifyTypeError(f"{name}[{key!r}]", type_, value)
-            else:
-                yield from check_dict(
-                    value,
-                    type_,
-                    name=f"{name}[{key!r}]",
-                )
-        else:
-            yield from check_simple_type(value, type_, name=f"{name}[{key!r}]")
+        yield from check_simple_type(value, type_, name=f"{name}[{key!r}]")
     if (
         structure_is_typeddict
         and (extra_items_type := getattr(structure, "__extra_items__", NoExtraItems))
