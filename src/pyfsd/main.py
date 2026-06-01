@@ -87,10 +87,9 @@ mode = "cron"
 cron_time = 3600
 fetchers = ["noaa"]
 
-[pyfsd.logger.logger]
+[pyfsd.logger.root_logger]
 handlers = ["default"]
 level = "DEBUG"
-propagate = true
 
 [pyfsd.logger.handlers.default]
 level = "INFO"
@@ -213,7 +212,7 @@ def main() -> None:
 
     # =============== Logger
     suppress_metar_parser_warning()
-    setup_logger(config["pyfsd"]["logger"])
+    setup_logger(config["pyfsd"]["logger"], finalize=False)
 
     # =============== Startup
     loop: AbstractEventLoop

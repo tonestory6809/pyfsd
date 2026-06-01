@@ -1,10 +1,7 @@
 # https://www.structlog.org/en/stable/standard-library.html
 """Logger configurer."""
 
-from logging import CRITICAL, DEBUG, ERROR, INFO, NOTSET, WARNING
 from logging.config import dictConfig
-from sys import version_info
-from typing import TypedDict
 
 from structlog import (
     configure,
@@ -14,25 +11,18 @@ from structlog import (
     stdlib,
 )
 from structlog.typing import EventDict
+from typing_extensions import NotRequired, Required, TypedDict
 
-if version_info >= (3, 11):
-    from typing import NotRequired  # type: ignore[attr-defined,unused-ignore]
-else:
-    from typing_extensions import NotRequired
-
-HandlerConfig = TypedDict(
+HandlerConfig = TypedDict(  # type: ignore[misc]
     "HandlerConfig",
-    {
-        "class": str,
-        "level": NotRequired[str],
-        "formatter": NotRequired[str],
-        "filters": NotRequired[list[str]],
-    },
+    {"class": Required[str], "level": str, "formatter": str, "filters": list[str]},
+    total=False,
+    extra_items=object,
 )
 
 
 class LoggerConfig(TypedDict, total=False):
-    """Type of value of logging.config.dictConfig.loggers."""
+    """Type of logger in logging.config.dictConfig."""
 
     level: str
     propagate: bool
@@ -40,94 +30,25 @@ class LoggerConfig(TypedDict, total=False):
     handlers: list[str]
 
 
-class TimeFormatConfig(TypedDict):
+class TimeFormatConfig(TypedDict, total=False):
     """Config of time formatter.
 
-    Attributes document comes from structlog.processors.TimeStamper.
-
     Attributes:
-        fmt: strftime format string, or "iso" for ISO 8601, or "timestamp" \
-            for a UNIX timestamp.
+        fmt: "iso" for ISO 8601, or "timestamp" for UNIX timestamp, or strftime format string
         utc: Whether timestamp should be in UTC or local time.
-        key: Target key in event_dict for added timestamps.
     """
 
-    fmt: str | None
+    fmt: str
     utc: bool
-    key: str
 
 
 class PyFSDLoggerConfig(TypedDict):
-    """PyFSD logger config.
+    """PyFSD logger config. See logging.config.dictConfig."""
 
-    Attributes:
-        handlers: See dictConfig.
-        loggers: See dictConfig.
-        include_extra: Print log's extra or not.
-        extract_record: Extract thread and process names and add them to the event dict.
-    """
-
-    handlers: dict[str, dict | HandlerConfig]  # Allow extra keys
-    logger: dict | LoggerConfig
-    include_extra: NotRequired[bool]
-    extract_record: NotRequired[bool]
+    handlers: dict[str, HandlerConfig]
+    root_logger: LoggerConfig
+    loggers: NotRequired[dict[str, LoggerConfig]]
     time: NotRequired[TimeFormatConfig]
-
-
-def make_filtering_stdlib_bound_logger(min_level: int) -> type[stdlib.BoundLogger]:
-    """Create a new BoundLogger that only logs min_level or higher."""
-    if min_level == NOTSET:
-        return stdlib.BoundLogger
-
-    def do_nothing(*_: object, **__: object) -> None:
-        return None
-
-    async def async_do_nothing(*_: object, **__: object) -> None:
-        return None
-
-    class BoundLogger(stdlib.BoundLogger):
-        def log(
-            self,
-            level: int,
-            event: str | None = None,
-            *args: object,
-            **kw: object,
-        ) -> object:
-            if level < min_level:
-                return None
-            return super().log(level, event, *args, **kw)
-
-        async def alog(  # codespell:ignore alog
-            self, level: object, event: str, *args: object, **kw: object
-        ) -> None:
-            if isinstance(level, int) and level < min_level:
-                return None
-            return await super().alog(  # codespell:ignore alog
-                level, event, *args, **kw
-            )
-
-        if min_level > CRITICAL:  # how
-            critical = do_nothing
-            fatal = do_nothing
-            acritical = async_do_nothing
-            afatal = async_do_nothing
-        elif min_level > ERROR:
-            error = do_nothing
-            exception = do_nothing
-            aerror = async_do_nothing
-            aexception = async_do_nothing
-        elif min_level > WARNING:
-            warning = do_nothing
-            warn = do_nothing
-            awarning = async_do_nothing
-        elif min_level > INFO:
-            info = do_nothing
-            ainfo = async_do_nothing
-        elif min_level > DEBUG:
-            debug = do_nothing
-            adebug = async_do_nothing
-
-    return BoundLogger
 
 
 def setup_logger(config: PyFSDLoggerConfig, *, finalize: bool = False) -> None:
@@ -138,62 +59,56 @@ def setup_logger(config: PyFSDLoggerConfig, *, finalize: bool = False) -> None:
         finalize: make loggers fit finalizing phrase of cpython.
     """
 
-    def append_funcname_lieneno(_: object, __: str, event: EventDict) -> EventDict:
-        event["logger_name"] = f"{event.pop('func_name')}:{event.pop('lineno')}"
+    def callsite_to_logger_name(_: object, __: str, event: EventDict) -> EventDict:
+        if (funcname := event.pop("func_name", None)) is not None:
+            event["logger_name"] = f"{funcname}:{event.pop('lineno')}"
         return event
 
-    reset_defaults()
-    include_extra, extract_record, time = (
-        config.get("include_extra", False),
-        config.get("extract_record", False),
-        config.get(
-            "time", {"fmt": "%Y-%m-%d %H:%M:%S", "utc": False, "key": "timestamp"}
-        ),
-    )
+    time = config.get("time", {})
+    fmt: str | None = time.get("fmt", "%Y-%m-%d %H:%M:%S")
     if finalize:
         # For some reason strftime() won't work when cpython is finalizing
-        time["fmt"] = "ISO"
-    elif time["fmt"] == "timestamp":
-        time["fmt"] = None
-    timestamper = processors.TimeStamper(**time)
+        fmt = "iso"
+    elif fmt == "timestamp":
+        fmt = None
+    timestamper = processors.TimeStamper(fmt, utc=time.get("utc", False))
     pre_chain = [
         # Add the log level and a timestamp to the event_dict if the log entry
         # is not from structlog.
         stdlib.add_log_level,
         stdlib.add_logger_name,
+        stdlib.ExtraAdder(),
         timestamper,
     ]
 
-    if include_extra:
-        pre_chain.append(stdlib.ExtraAdder())
-
-    def suppress_extra(_: object, __: str, event_dict: dict) -> dict:
-        """Remove log's extra."""
-        event_dict.pop("extra", None)
-        return event_dict
-
-    def extract_from_record(_: object, __: str, event_dict: dict) -> dict:
-        """Extract thread and process names and add them to the event dict."""
-        record = event_dict["_record"]
-        event_dict["thread_name"] = record.threadName
-        event_dict["process_name"] = record.processName
-        return event_dict
-
-    extra_dealers = []
-    if not include_extra:
-        extra_dealers.append(suppress_extra)
-    elif extract_record:
-        extra_dealers.append(extract_from_record)
-
+    reset_defaults()
     dictConfig(
         {
             "version": 1,
             "disable_existing_loggers": False,
             "formatters": {
+                "json": {
+                    "()": stdlib.ProcessorFormatter,
+                    "processors": [
+                        processors.dict_tracebacks,
+                        stdlib.ProcessorFormatter.remove_processors_meta,
+                        processors.JSONRenderer(),
+                    ],
+                    "foreign_pre_chain": pre_chain,
+                },
+                "logfmt": {
+                    "()": stdlib.ProcessorFormatter,
+                    "processors": [
+                        processors.dict_tracebacks,
+                        stdlib.ProcessorFormatter.remove_processors_meta,
+                        processors.LogfmtRenderer(),
+                    ],
+                    "foreign_pre_chain": pre_chain,
+                },
                 "plain": {
                     "()": stdlib.ProcessorFormatter,
                     "processors": [
-                        *extra_dealers,
+                        callsite_to_logger_name,
                         stdlib.ProcessorFormatter.remove_processors_meta,
                         dev.ConsoleRenderer(
                             colors=False,
@@ -204,19 +119,10 @@ def setup_logger(config: PyFSDLoggerConfig, *, finalize: bool = False) -> None:
                     ],
                     "foreign_pre_chain": pre_chain,
                 },
-                "json": {
-                    "()": stdlib.ProcessorFormatter,
-                    "processors": [
-                        *extra_dealers,
-                        stdlib.ProcessorFormatter.remove_processors_meta,
-                        processors.JSONRenderer(),
-                    ],
-                    "foreign_pre_chain": pre_chain,
-                },
                 "colored": {
                     "()": stdlib.ProcessorFormatter,
                     "processors": [
-                        *extra_dealers,
+                        callsite_to_logger_name,
                         stdlib.ProcessorFormatter.remove_processors_meta,
                         dev.ConsoleRenderer(
                             colors=True,
@@ -228,19 +134,20 @@ def setup_logger(config: PyFSDLoggerConfig, *, finalize: bool = False) -> None:
                     "foreign_pre_chain": pre_chain,
                 },
             },
+            "loggers": config.get("loggers", {}),
             "handlers": config["handlers"],
-            "loggers": {"": config["logger"]},
+            "root": config["root_logger"],
         }
     )
     configure(
         processors=[
+            stdlib.filter_by_level,
             processors.CallsiteParameterAdder(
                 [
                     processors.CallsiteParameter.FUNC_NAME,
                     processors.CallsiteParameter.LINENO,
                 ]
             ),
-            append_funcname_lieneno,
             stdlib.add_log_level,
             stdlib.add_logger_name,
             stdlib.PositionalArgumentsFormatter(),
@@ -249,15 +156,6 @@ def setup_logger(config: PyFSDLoggerConfig, *, finalize: bool = False) -> None:
             stdlib.ProcessorFormatter.wrap_for_formatter,
         ],
         logger_factory=stdlib.LoggerFactory(),
-        wrapper_class=make_filtering_stdlib_bound_logger(
-            {
-                "NOTSET": 0,
-                "DEBUG": 10,
-                "INFO": 20,
-                "WARNING": 30,
-                "ERROR": 40,
-                "CRITICAL": 50,
-            }[config["logger"]["level"]]
-        ),
+        wrapper_class=stdlib.BoundLogger,
         cache_logger_on_first_use=True,
     )
