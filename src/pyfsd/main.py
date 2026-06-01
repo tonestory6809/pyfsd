@@ -144,11 +144,14 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
     await logger.ainfo(
         f"{plugins_count} plugins: {pm!s}" if plugins_count else "0 plugins"
     )
-    tasks_pyfsd = (
-        container.metar_manager().get_cron_task(),
+    tasks_pyfsd = [
         container.client_factory().get_heartbeat_task(),
         logged_task(create_task(client_server.serve_forever())),
-    )
+    ]
+    if container.metar_manager().cron_time:
+        tasks_pyfsd.append(
+            container.metar_manager().get_cron_task(),
+        )
     try:
         await shield(gather(*tasks_pyfsd, return_exceptions=True))
     except CancelledError:

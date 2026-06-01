@@ -46,7 +46,7 @@ async def noaa_fetch_once(_: object, icao: str) -> WeatherProfile | None:
             f"https://tgftp.nws.noaa.gov/data/observations/metar/stations/{icao}.TXT"
         ) as resp,
     ):
-        if resp.status == HTTP_OK:
+        if resp.status != HTTP_OK:
             return None
         return WeatherProfile((await resp.text(errors="ignore")).splitlines()[1])
 
