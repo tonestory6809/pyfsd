@@ -137,14 +137,12 @@ class ClientProtocol(LineProtocol):
 
     Attributes:
         factory: The client protocol factory.
-        timeout_killer: Helper to disconnect when timeout.
         transport: Asyncio transport.
         client: The client info. None before `#AA` or `#AP` to create new client.
         tasks: Processing handle_line tasks.
     """
 
     factory: "ClientFactory"
-    timeout_killer_task: asyncio.Task[None] | None
     worker_task: asyncio.Task[None] | None
     # TODO: migrate to Queue.shutdown
     worker_queue: asyncio.Queue[bytes | None]
@@ -155,19 +153,23 @@ class ClientProtocol(LineProtocol):
         """Create a ClientProtocol instance."""
         self.factory = factory
         self.client = None
-        self.timeout_killer_task = None
         self.worker_task = None
         self.worker_queue = asyncio.Queue()
         super().__init__()
-        # timeout_killer_task and worker_task and transport will be
-        # initialized in connection_made.
+        # worker_task and transport will be initialized in connection_made.
 
     async def handle_line_worker_func(self) -> None:
         """Worker processes line."""
         result: "PyFSDHandledEventResult | PluginHandledEventResult"  # noqa: UP037
 
         while True:
-            line = await self.worker_queue.get()
+            try:
+                line = await asyncio.wait_for(self.worker_queue.get(), 500)
+            except asyncio.TimeoutError:
+                self.send_line(b"# Timeout")
+                await logger.ainfo(f"Kicking {self.get_description()}: timeout")
+                self.kill_after_1sec()
+                continue
 
             # sentinel value used by connection_lost()
             if line is None:
@@ -215,7 +217,29 @@ class ClientProtocol(LineProtocol):
         self.worker_task = logged_task(
             asyncio.create_task(self.handle_line_worker_func())
         )
-        self.reset_timeout_killer()
+
+        def worker_done(task: asyncio.Task) -> None:
+            self.worker_task = None
+            if task.cancelled():
+                return
+            exc = task.exception()
+            if exc is None:
+                return
+            logger.error(
+                "Worker of %s died unexpectedly",
+                self.get_description(),
+                exc_info=exc,
+            )
+            self.send_lines(
+                make_packet(
+                    FSDClientCommand.MESSAGE + b"server",
+                    self.client.callsign if self.client is not None else b"unknown",
+                    b"internal server error",
+                ),
+            )
+            self.kill_after_1sec()
+
+        self.worker_task.add_done_callback(worker_done)
         logger.info("New connection from %s.", ip)
         self.factory.plugin_manager.trigger_event_auditers_nonblock(
             "new_connection_established", (self,), {}
@@ -223,15 +247,11 @@ class ClientProtocol(LineProtocol):
 
     def line_received(self, line: bytes) -> None:
         """Handle a line."""
-        self.reset_timeout_killer()
         self.worker_queue.put_nowait(line)
 
     def connection_lost(self, exc: BaseException | None = None) -> None:
         """Handle connection lost."""
         self.factory.transports.remove(self.transport)
-        if self.timeout_killer_task:
-            self.timeout_killer_task.cancel()
-            self.timeout_killer_task = None
         if self.worker_task:
             self.worker_queue.put_nowait(None)
 
@@ -291,21 +311,6 @@ class ClientProtocol(LineProtocol):
             )
 
         return cast("str", self.transport.get_extra_info("peername")[0])
-
-    def reset_timeout_killer(self) -> None:
-        """Reset timeout killer."""
-
-        async def timeout_killer() -> None:
-            await asyncio.sleep(500)
-            self.send_line(b"# Timeout")
-            await logger.ainfo(f"Kicking {self.get_description()}: timeout")
-            self.kill_after_1sec()
-
-        if self.timeout_killer_task:
-            self.timeout_killer_task.cancel()
-        self.timeout_killer_task = logged_task(
-            asyncio.create_task(timeout_killer()),
-        )
 
     def send_error(
         self, errno: FSDClientError, *, env: bytes = b"", fatal: bool = False
