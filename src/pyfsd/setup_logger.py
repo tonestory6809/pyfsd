@@ -1,6 +1,8 @@
 # https://www.structlog.org/en/stable/standard-library.html
 """Logger configurer."""
 
+import sys
+from logging import captureWarnings, getLogger
 from logging.config import dictConfig
 
 from structlog import (
@@ -158,4 +160,33 @@ def setup_logger(config: PyFSDLoggerConfig, *, finalize: bool = False) -> None:
         logger_factory=stdlib.LoggerFactory(),
         wrapper_class=stdlib.BoundLogger,
         cache_logger_on_first_use=True,
+    )
+
+
+def redirect_to_logger() -> None:
+    """Redirect warnings, sys.unraisablehook to logger."""
+    captureWarnings(True)
+
+    def format_msg(msg: str | None, obj: object) -> str:
+        if obj is not None:
+            try:
+                obj_repr = repr(obj)
+            except BaseException:  # noqa: BLE001
+                obj_repr = "<object repr() failed>"
+            return ("Exception ignored in: " if msg is None else msg) + obj_repr
+        return "Exception ignored" if msg is None else msg
+
+    sys.unraisablehook = lambda exc: getLogger("py.sys").error(
+        format_msg(exc.err_msg, exc.object),
+        exc_info=(
+            exc.exc_type,
+            exc.exc_value
+            if exc.exc_value is not None
+            else type(
+                exc.exc_type.__qualname__,
+                (Exception,),
+                {"__module__": exc.exc_type.__module__},
+            )(),
+            exc.exc_traceback,
+        ),
     )

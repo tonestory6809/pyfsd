@@ -35,7 +35,7 @@ from .define.utils import logged_task, mustdone_task_keeper, task_keeper
 from .dependencies import Container
 from .factory.client import PyFSDClientConfig
 from .metar.manager import PyFSDMetarConfig, suppress_metar_parser_warning
-from .setup_logger import PyFSDLoggerConfig, setup_logger
+from .setup_logger import PyFSDLoggerConfig, redirect_to_logger, setup_logger
 
 try:
     from tomllib import loads  # type: ignore[import-not-found,unused-ignore]
@@ -216,6 +216,7 @@ def main() -> None:
     # =============== Logger
     suppress_metar_parser_warning()
     setup_logger(config["pyfsd"]["logger"], finalize=False)
+    redirect_to_logger()
 
     # =============== Startup
     loop: AbstractEventLoop
