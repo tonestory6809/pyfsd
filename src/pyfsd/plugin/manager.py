@@ -28,7 +28,7 @@ Tip: how the plugin architecture works:
 """
 
 from asyncio import CancelledError, create_task, gather
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from inspect import getfile
 from os import getcwd
 from random import choices
@@ -48,6 +48,7 @@ from pyfsd.define.utils import logged_task, mustdone_task_keeper
 
 from . import (
     API_LEVEL,
+    AsyncCallable,
     EventListenersDict,
     Plugin,
     PluginHandledEventResult,
@@ -111,8 +112,8 @@ class SortedPlugins(TypedDict):
         handlers: { "event name": ((<plugin>, <handler from the plugin>), ...), ... }
     """
 
-    auditers: dict[str, tuple[tuple[Plugin, Callable[..., Awaitable]], ...]]
-    handlers: dict[str, tuple[tuple[Plugin, Callable[..., Awaitable]], ...]]
+    auditers: dict[str, tuple[tuple[Plugin, AsyncCallable[...]], ...]]
+    handlers: dict[str, tuple[tuple[Plugin, AsyncCallable[...]], ...]]
 
 
 class PluginManager:
@@ -249,21 +250,24 @@ class PluginManager:
         Args:
             plugins_handlers: {"plugin_name": <EventListenersDict>, ...}
         """
-        all_auditers: dict[str, list[tuple[Plugin, Callable[..., Awaitable]]]] = {}
-        all_handlers: dict[str, list[tuple[Plugin, Callable[..., Awaitable]]]] = {}
+        all_auditers: dict[str, list[tuple[Plugin, AsyncCallable[...]]]] = {}
+        all_handlers: dict[str, list[tuple[Plugin, AsyncCallable[...]]]] = {}
 
         for plugin, listeners in plugins_handlers.items():
             for event_name, plugin_auditers in listeners["auditers"].items():
                 if event_name not in all_auditers:
                     all_auditers[event_name] = []
+                # TODO: remove ignore when mypy support extra_items
                 all_auditers[event_name].extend(
-                    (plugin, auditer) for auditer in plugin_auditers
+                    (plugin, auditer)
+                    for auditer in plugin_auditers  # type: ignore[attr-defined]
                 )
             for event_name, plugin_handlers in listeners["handlers"].items():
                 if event_name not in all_handlers:
                     all_handlers[event_name] = []
                 all_handlers[event_name].extend(
-                    (plugin, handler) for handler in plugin_handlers
+                    (plugin, handler)
+                    for handler in plugin_handlers  # type: ignore[attr-defined]
                 )
 
         self.sorted_plugins = {
@@ -311,7 +315,7 @@ class PluginManager:
         if self.sorted_plugins is None:
             raise RuntimeError("plugins not sorted")
 
-        async def auditer_runner(auditer: Callable[..., Awaitable], name: str) -> None:
+        async def auditer_runner(auditer: AsyncCallable[...], name: str) -> None:
             try:
                 await auditer(*args, **kwargs)
             except Exception:

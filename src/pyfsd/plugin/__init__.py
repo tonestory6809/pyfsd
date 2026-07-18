@@ -1,4 +1,3 @@
-# pyright: reportSelfClsParameterName=false, reportGeneralTypeIssues=false
 """PyFSD plugin architecture.
 
 Attributes:
@@ -7,14 +6,22 @@ Attributes:
     EventResult: event handle result for handleable events.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from dataclasses import dataclass, field
 from typing import (
+    TYPE_CHECKING,
     Literal,
-    TypedDict,
-    TypeVar,
+    ParamSpec,
     Union,
+    overload,
 )
+
+from typing_extensions import TypedDict
+
+if TYPE_CHECKING:
+    from pyfsd.client.object import Client
+    from pyfsd.client.session import ClientSession
+    from pyfsd.define.protocol.packet import ServerBoundPacket
 
 __all__ = [
     "API_LEVEL",
@@ -29,7 +36,10 @@ __all__ = [
 ]
 
 
-C = TypeVar("C", bound=Callable[..., Awaitable])
+P = ParamSpec("P")
+AsyncCallable = Callable[P, Awaitable]
+_IterableEventHandlers = Iterable[AsyncCallable[P]]
+_EventHandlerDecorator = Callable[[AsyncCallable[P]], AsyncCallable[P]]
 
 API_LEVEL = (5, 0)
 EventResult = Union["PluginHandledEventResult", "PyFSDHandledEventResult"]
@@ -51,11 +61,37 @@ class PreventEvent(BaseException):
         self.result = result
 
 
+# TODO: some of them wasn't already applied
+class EventHandlersDict(  # type: ignore[call-arg]
+    TypedDict,
+    extra_items=_IterableEventHandlers[...],
+    total=False,
+):
+    """Event handlers."""
+
+    packet_received: _IterableEventHandlers[["Client", "ServerBoundPacket"]]
+
+
+class EventAuditersDict(  # type: ignore[call-arg]
+    TypedDict,
+    extra_items=_IterableEventHandlers[...],
+    total=False,
+):
+    client_disconnected: _IterableEventHandlers[["ClientSession", "Client"]]
+    new_connection_established: _IterableEventHandlers[["ClientSession"]]
+    packet_received: _IterableEventHandlers[
+        ["Client", "ServerBoundPacket", "EventResult"]
+    ]
+    new_client_created: _IterableEventHandlers[["Client"]]
+    before_start: _IterableEventHandlers[[]]
+    before_stop: _IterableEventHandlers[[]]
+
+
 class EventListenersDict(TypedDict):
     """Dict that stores event listeners (handlers & auditers)."""
 
-    handlers: dict[str, list[Callable[..., Awaitable]]]
-    auditers: dict[str, list[Callable[..., Awaitable]]]
+    handlers: EventHandlersDict
+    auditers: EventAuditersDict
 
 
 class Plugin:
@@ -133,40 +169,72 @@ class SimplePlugin(Plugin):
     listeners: EventListenersDict = field(  # type: ignore[assignment]
         default_factory=lambda: {"auditers": {}, "handlers": {}}
     )
+    _pre_setup: AsyncCallable[...] | None = field(init=False, default=None)
 
     async def setup(self) -> EventListenersDict:
         """Return listeners registered by self.handle() and self.audit() before."""
-        if callable(pre_setup := getattr(self, "__pre_setup", None)):
-            await pre_setup()
+        if self._pre_setup:
+            await self._pre_setup()
         return self.listeners
 
-    def handle(self, event: str) -> Callable[[C], C]:
+    @overload
+    def handle(
+        self, event: Literal["packet_received"]
+    ) -> _EventHandlerDecorator[["ClientSession", "ServerBoundPacket"]]: ...
+    @overload
+    def handle(self, event: str) -> _EventHandlerDecorator[...]: ...
+
+    def handle(self, event: str) -> _EventHandlerDecorator[...]:
         """Add a event handler for specified event."""
         if event not in self.listeners["handlers"]:
-            self.listeners["handlers"][event] = []
+            # TODO: mypy hasn't impled extra_items so ignore for now
+            self.listeners["handlers"][event] = []  # type: ignore[literal-required]
 
-        def decorator(handler: C) -> C:
-            self.listeners["handlers"][event].append(handler)
+        def decorator(handler: AsyncCallable[P]) -> AsyncCallable[P]:
+            self.listeners["handlers"][event].append(handler)  # type: ignore[literal-required]
             return handler
 
         return decorator
 
-    def audit(self, event: str) -> Callable[[C], C]:
+    @overload
+    def audit(
+        self, event: Literal["client_disconnected"]
+    ) -> _EventHandlerDecorator[["ClientSession", "Client"]]: ...
+    @overload
+    def audit(
+        self, event: Literal["new_connection_established"]
+    ) -> _EventHandlerDecorator[["ClientSession"]]: ...
+    @overload
+    def audit(
+        self, event: Literal["packet_received"]
+    ) -> _EventHandlerDecorator[
+        ["ClientSession", "ServerBoundPacket", "EventResult"]
+    ]: ...
+    @overload
+    def audit(
+        self, event: Literal["new_client_created"]
+    ) -> _EventHandlerDecorator[["Client"]]: ...
+    @overload
+    def audit(self, event: Literal["before_start"]) -> _EventHandlerDecorator[[]]: ...
+    @overload
+    def audit(self, event: Literal["before_stop"]) -> _EventHandlerDecorator[[]]: ...
+    @overload
+    def audit(self, event: str) -> _EventHandlerDecorator[...]: ...
+
+    def audit(self, event: str) -> _EventHandlerDecorator[...]:
         """Add a event auditer for specified event."""
         if event not in self.listeners["auditers"]:
-            self.listeners["auditers"][event] = []
+            self.listeners["auditers"][event] = []  # type: ignore[literal-required]
 
-        def decorator(auditer: C) -> C:
-            self.listeners["auditers"][event].append(auditer)
+        def decorator(auditer: AsyncCallable[P]) -> AsyncCallable[P]:
+            self.listeners["auditers"][event].append(auditer)  # type: ignore[literal-required]
             return auditer
 
         return decorator
 
-    def setuper(self, setuper: C) -> C:
+    def setuper(self, setuper: AsyncCallable[P]) -> AsyncCallable[P]:
         """Set setuper."""
-        if callable(getattr(self, "__pre_setup", None)):
-            raise TypeError("setuper already exist")
-        object.__setattr__(self, "__pre_setup", setuper)
+        object.__setattr__(self, "_pre_setup", setuper)
         return setuper
 
 
