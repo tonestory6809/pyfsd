@@ -133,70 +133,55 @@ class ClientProtocol(LineProtocol):
         super().__init__()
         # worker_task and transport will be initialized in connection_made.
 
-    async def handle_line_worker_func(self) -> None:
-        """Worker processes line."""
-        result: "PyFSDHandledEventResult | PluginHandledEventResult"  # noqa: UP037
+    # ======== ClientSession implementation
+    def kill(self) -> None:
+        """Kill this client after 1 second."""
 
-        while True:
-            try:
-                line = await asyncio.wait_for(self.worker_queue.get(), 500)
-            except asyncio.TimeoutError:
-                self.send_line(b"# Timeout")
-                await logger.ainfo(f"Kicking {self.get_description()}: timeout")
-                self.kill_after_1sec()
-                continue
+        async def kill() -> None:
+            await asyncio.sleep(1)
+            self.transport.close()
 
-            if line is None:  # sentinel value used in connection_lost()
-                break
-            if not line:
-                continue
+        mustdone_task_keeper.add(logged_task(asyncio.create_task(kill())))
 
-            # TODO: currently if the packet cannot be parsed, plugin will not know it.
-            # should tweak somehow later
-            packet = try_parse(line)
-            if not packet:
-                self.send_error(FSDClientError.SYNTAX)
-                continue
+    def close(self) -> None:
+        """Kill the client immediately."""
 
-            # First try to let plugins to process
-            plugin_result = await self.factory.plugin_manager.trigger_event_handlers(
-                "packet_received",
-                (self, packet),
-                {},
-            )
-            if plugin_result is None:  # Not handled by plugin
-                packet_ok, has_result = await self.handle_packet(packet)
-                result = cast(
-                    "PyFSDHandledEventResult",
-                    {
-                        "handled_by_plugin": False,
-                        "success": packet_ok and has_result,
-                        "packet": packet,
-                        "packet_ok": packet_ok,
-                        "has_result": has_result,
-                    },
-                )
-            else:
-                result = plugin_result
+        self.transport.close()
 
-            self.factory.plugin_manager.trigger_event_auditers_nonblock(
-                "packet_received",
-                (self, packet, result),
-                {},
+    def send_packets(self, *packets: ClientBoundPacket) -> None:
+        """Send multiple packets."""
+        self.send_lines(
+            *(packet.pack() for packet in packets), auto_newline=True, together=True
+        )
+
+    def get_description(self) -> str:
+        """Get text description of this client."""
+        if self.client is not None:
+            return (
+                cast("str", self.transport.get_extra_info("peername")[0])
+                + f" ({self.client.callsign.decode(errors='replace')})"
             )
 
-        self.worker_task = None
+        return cast("str", self.transport.get_extra_info("peername")[0])
+
+    def get_client(self) -> Client | None:
+        return self.client
+
+    # ======== asyncio.Protocol implementation
+    def line_received(self, line: bytes) -> None:
+        """Handle a line."""
+        self.worker_queue.put_nowait(line)
 
     def connection_made(self, transport: asyncio.Transport) -> None:  # type: ignore[override]
         """Initialize something after the connection is made."""
         super().connection_made(transport)
+        self.factory.sessions.append(self)
         ip = self.transport.get_extra_info("peername")[0]
         if ip in self.factory.blacklist:
             logger.info("Kicking %s: blacklist", ip)
             self.transport.close()
             return
 
-        self.factory.transports.append(transport)
         self.worker_task = asyncio.create_task(self.handle_line_worker_func())
 
         def worker_done(task: asyncio.Task) -> None:
@@ -219,7 +204,7 @@ class ClientProtocol(LineProtocol):
                     b"internal server error",
                 ),
             )
-            self.kill_after_1sec()
+            self.kill()
 
         self.worker_task.add_done_callback(worker_done)
         logger.info("New connection from %s.", ip)
@@ -227,13 +212,9 @@ class ClientProtocol(LineProtocol):
             "new_connection_established", (self,), {}
         )
 
-    def line_received(self, line: bytes) -> None:
-        """Handle a line."""
-        self.worker_queue.put_nowait(line)
-
     def connection_lost(self, exc: BaseException | None = None) -> None:
         """Handle connection lost."""
-        self.factory.transports.remove(self.transport)
+        self.factory.sessions.remove(self)
         if self.worker_task:
             self.worker_queue.put_nowait(None)
 
@@ -274,31 +255,7 @@ class ClientProtocol(LineProtocol):
         )
         return super().buffer_size_exceed(length)
 
-    def kill_after_1sec(self) -> None:
-        """Kill this client after 1 second by kill_func."""
-
-        async def kill() -> None:
-            await asyncio.sleep(1)
-            self.transport.close()
-
-        mustdone_task_keeper.add(logged_task(asyncio.create_task(kill())))
-
-    def get_description(self) -> str:
-        """Get text description of this client."""
-        if self.client is not None:
-            return (
-                cast("str", self.transport.get_extra_info("peername")[0])
-                + f" ({self.client.callsign.decode(errors='replace')})"
-            )
-
-        return cast("str", self.transport.get_extra_info("peername")[0])
-
-    def send_packets(self, *packets: ClientBoundPacket) -> None:
-        """Send multiple packets."""
-        self.send_lines(
-            *(packet.pack() for packet in packets), auto_newline=True, together=True
-        )
-
+    # ======== helpers
     def send_error(
         self, errno: FSDClientError, *, env: bytes = b"", fatal: bool = False
     ) -> None:
@@ -320,7 +277,7 @@ class ClientProtocol(LineProtocol):
         )
         if fatal:
             logger.info("Kicking %s: %s", self.get_description(), str(errno))
-            self.kill_after_1sec()
+            self.kill()
 
     def send_motd(self) -> None:
         """Send motd to client."""
@@ -375,6 +332,87 @@ class ClientProtocol(LineProtocol):
             )
         raise NotImplementedError
 
+    async def check_auth(
+        self, cid: bytes, password: bytes, req_rating: int
+    ) -> HandleResult:
+        """Verify cid & password & rating."""
+        try:
+            cid_str = cid.decode("utf-8")
+            pwd_str = password.decode("utf-8")
+        except UnicodeDecodeError:
+            self.send_error(FSDClientError.CIDINVALID, env=cid, fatal=True)
+            return False, False
+        rating = await self.factory.check_auth(cid_str, pwd_str)
+        if rating is None:
+            self.send_error(FSDClientError.CIDINVALID, env=cid, fatal=True)
+            return True, False
+        if rating == 0:
+            self.send_error(FSDClientError.CSSUSPEND, fatal=True)
+            return True, False
+        if rating < req_rating:
+            self.send_error(
+                FSDClientError.LEVEL,
+                env=b"%d" % req_rating,
+                fatal=True,
+            )
+            return True, False
+        return True, True
+
+    # ======== business logic
+    async def handle_line_worker_func(self) -> None:
+        """Worker processes line."""
+        result: "PyFSDHandledEventResult | PluginHandledEventResult"  # noqa: UP037
+
+        while True:
+            try:
+                line = await asyncio.wait_for(self.worker_queue.get(), 500)
+            except asyncio.TimeoutError:
+                self.send_line(b"# Timeout")
+                await logger.ainfo(f"Kicking {self.get_description()}: timeout")
+                self.kill()
+                continue
+
+            if line is None:  # sentinel value used in connection_lost()
+                break
+            if not line:
+                continue
+
+            # TODO: currently if the packet cannot be parsed, plugin will not know it.
+            # should tweak somehow later
+            packet = try_parse(line)
+            if not packet:
+                self.send_error(FSDClientError.SYNTAX)
+                continue
+
+            # First try to let plugins to process
+            plugin_result = await self.factory.plugin_manager.trigger_event_handlers(
+                "packet_received",
+                (self, packet),
+                {},
+            )
+            if plugin_result is None:  # Not handled by plugin
+                packet_ok, has_result = await self.handle_packet(packet)
+                result = cast(
+                    "PyFSDHandledEventResult",
+                    {
+                        "handled_by_plugin": False,
+                        "success": packet_ok and has_result,
+                        "packet": packet,
+                        "packet_ok": packet_ok,
+                        "has_result": has_result,
+                    },
+                )
+            else:
+                result = plugin_result
+
+            self.factory.plugin_manager.trigger_event_auditers_nonblock(
+                "packet_received",
+                (self, packet, result),
+                {},
+            )
+
+        self.worker_task = None
+
     @check_packet()
     async def handle_cast(
         self,
@@ -401,32 +439,6 @@ class ClientProtocol(LineProtocol):
             to_packet.dest,
             to_packet,
         )
-
-    async def check_auth(
-        self, cid: bytes, password: bytes, req_rating: int
-    ) -> HandleResult:
-        """Verify cid & password & rating."""
-        try:
-            cid_str = cid.decode("utf-8")
-            pwd_str = password.decode("utf-8")
-        except UnicodeDecodeError:
-            self.send_error(FSDClientError.CIDINVALID, env=cid, fatal=True)
-            return False, False
-        rating = await self.factory.check_auth(cid_str, pwd_str)
-        if rating is None:
-            self.send_error(FSDClientError.CIDINVALID, env=cid, fatal=True)
-            return True, False
-        if rating == 0:
-            self.send_error(FSDClientError.CSSUSPEND, fatal=True)
-            return True, False
-        if rating < req_rating:
-            self.send_error(
-                FSDClientError.LEVEL,
-                env=b"%d" % req_rating,
-                fatal=True,
-            )
-            return True, False
-        return True, True
 
     async def handle_add_client(
         self, packet: AddATCPacket | AddPilotPacket
@@ -458,7 +470,7 @@ class ClientProtocol(LineProtocol):
             packet.protocol,
             packet.realname,
             getattr(packet, "simtype", -1),
-            self.transport,
+            self,
         )
         self.factory.clients[packet.source] = client
         self.client = client
@@ -477,7 +489,7 @@ class ClientProtocol(LineProtocol):
         """Handle remove client request."""
         assert self.client is not None
         await logger.ainfo("Kicking %s: client asked to remove", self.get_description())
-        self.kill_after_1sec()
+        self.kill()
         return True, True
 
     @check_packet()
@@ -705,33 +717,13 @@ class ClientProtocol(LineProtocol):
         self.factory.send_to(
             packet.who, KillPacket(b"SERVER", packet.who, packet.reason)
         )
-        client_to_kill = self.factory.clients[packet.who]
-        transport_to_kill = client_to_kill.transport
-
-        if isinstance(
-            protocol_to_kill := transport_to_kill.get_protocol(), ClientProtocol
-        ):
-            description = protocol_to_kill.get_description()
-            kill_it = protocol_to_kill.kill_after_1sec
-        else:
-            ip_kill = self.factory.clients[packet.who].transport.get_extra_info(
-                "peername"
-            )[0]
-            description = f"{ip_kill}({packet.who.decode(errors='replace')})"
-
-            def kill_it() -> None:
-                async def killer() -> None:
-                    await asyncio.sleep(1)
-                    transport_to_kill.close()
-
-                mustdone_task_keeper.add(logged_task(asyncio.create_task(killer())))
-
+        session_to_kill = self.factory.clients[packet.who].session
         logger.info(
             "Kicking %s: killed by %s",
-            description,
+            session_to_kill.get_description(),
             self.client.callsign.decode(errors="replace"),
         )
-        kill_it()
+        session_to_kill.kill()
         return True, True
 
     async def handle_packet(

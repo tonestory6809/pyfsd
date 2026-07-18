@@ -1,6 +1,6 @@
 """Protocol factory -- client."""
 
-from asyncio import create_task
+from asyncio import CancelledError, create_task
 from asyncio import sleep as asleep
 from hashlib import sha256
 from random import randint
@@ -18,15 +18,16 @@ from typing_extensions import NotRequired, TypedDict
 
 from pyfsd.db_tables import users_table
 from pyfsd.define.protocol.packet import ClientBoundPacket, WindDeltaPacket
-from pyfsd.define.utils import join_lines, logged_task
+from pyfsd.define.utils import logged_task
 from pyfsd.protocol.client import ClientProtocol
 
 if TYPE_CHECKING:
-    from asyncio import Task, Transport
+    from asyncio import Task
 
     from sqlalchemy.ext.asyncio import AsyncEngine
 
     from pyfsd.define.broadcast import BroadcastChecker
+    from pyfsd.factory.session import ClientSession
     from pyfsd.metar.manager import MetarManager
     from pyfsd.object.client import Client
     from pyfsd.plugin.manager import PluginManager
@@ -50,7 +51,7 @@ class ClientFactory:
 
     Attributes:
         clients: All logined clients, Dict[callsign(bytes), Client]
-        transports: All alive transports.
+        sessions: All alive sessions.
         heartbeat_task: Task to send heartbeat to clients.
         motd: The Message Of The Day.
         blacklist: IP blacklist.
@@ -61,7 +62,7 @@ class ClientFactory:
     """
 
     clients: dict[bytes, "Client"]
-    transports: list["Transport"]
+    sessions: list["ClientSession"]
     heartbeat_task: "Task[NoReturn] | None"
     metar_manager: "MetarManager"
     plugin_manager: "PluginManager"
@@ -80,7 +81,7 @@ class ClientFactory:
     ) -> None:
         """Create a ClientFactory instance."""
         self.clients = {}
-        self.transports = []
+        self.sessions = []
         self.heartbeat_task = None
         self.motd = motd.splitlines()
         self.blacklist = blacklist
@@ -121,7 +122,6 @@ class ClientFactory:
         self,
         *packets: ClientBoundPacket,
         check_func: "BroadcastChecker" = lambda _, __: True,
-        auto_newline: bool = True,
         from_client: Optional["Client"] = None,
     ) -> bool:
         """Broadcast a message.
@@ -129,44 +129,55 @@ class ClientFactory:
         Args:
             packets: Packets to be broadcasted.
             check_func: Function to check if message should be sent to a client.
-            auto_newline: Auto put newline marker between lines or not.
             from_client: Where the message from.
 
         Return:
-            Lines sent to at least one client or not.
+            Packets sent to at least one client or not.
         """
         have_one = False
-        data = join_lines(*(p.pack() for p in packets), newline=auto_newline)
         for client in self.clients.values():
             if client is from_client:
                 continue
             if not check_func(from_client, client):
                 continue
-            have_one = True
-            if not client.transport.is_closing():
-                client.transport.write(data)
+            try:
+                client.session.send_packets(*packets)
+            except (KeyboardInterrupt, CancelledError):
+                raise
+            except BaseException as err:  # noqa: BLE001
+                logger.debug(
+                    "Failed to send packets",
+                    exc_info=err,
+                    dest=client.session.get_description(),
+                )
+            else:
+                have_one = True
         return have_one
 
-    def send_to(
-        self, callsign: bytes, *packets: ClientBoundPacket, auto_newline: bool = True
-    ) -> bool:
+    def send_to(self, callsign: bytes, *packets: ClientBoundPacket) -> bool:
         """Send packets to a specified client.
 
         Args:
             callsign: The client's callsign.
-            lines: Lines to be broadcasted.
-            auto_newline: Auto put newline marker between lines or not.
+            packets: Packets to be broadcasted.
 
         Returns:
             Is there a client called {callsign} (and is message sent or not).
         """
-        data = join_lines(*(p.pack() for p in packets), newline=auto_newline)
-        try:
-            self.clients[callsign].transport.write(data)
-        except KeyError:
+        if (client := self.clients.get(callsign, None)) is None:
             return False
-        else:
-            return True
+        try:
+            client.session.send_packets(*packets)
+        except (KeyboardInterrupt, CancelledError):
+            raise
+        except BaseException as err:  # noqa: BLE001
+            logger.debug(
+                "Failed to send packets",
+                exc_info=err,
+                dest=client.session.get_description(),
+            )
+            return False
+        return True
 
     async def check_auth(self, username: str, password: str) -> int | None:
         """Check if password and username is correct."""
@@ -218,5 +229,5 @@ class ClientFactory:
 
     def remove_all_clients(self) -> None:
         """Remove all clients."""
-        for transport in self.transports.copy():
-            transport.close()
+        for session in self.sessions.copy():
+            session.close()

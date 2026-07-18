@@ -6,7 +6,7 @@ from time import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from asyncio import Transport
+    from pyfsd.factory.session import ClientSession
 
 __all__ = ["Client", "FlightPlan", "Position"]
 
@@ -51,7 +51,7 @@ class Client:
     protocol: int
     realname: bytes
     sim_type: int
-    transport: "Transport"
+    session: "ClientSession"
     position: Position = (0, 0)
     transponder: int = 0
     altitude: int = 0
