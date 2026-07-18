@@ -1,4 +1,4 @@
-"""FSD client protocol errors."""
+"""FSD protocol 9 errors."""
 
 __all__ = ["FSDClientError"]
 
@@ -41,4 +41,23 @@ class FSDClientError(IntEnum):
             "Requested level too high",
             "Too many clients connected",
             "CID/PID was suspended",
+        )[int(self)]
+
+    def __bytes__(self) -> bytes:
+        """Return the error string."""
+        return (
+            b"No error",
+            b"Callsign in use",
+            b"Invalid callsign",
+            b"Already registerd",  # codespell:ignore registerd
+            b"Syntax error",
+            b"Invalid source callsign",
+            b"Invalid CID/password",
+            b"No such callsign",
+            b"No flightplan",
+            b"No such weather profile",
+            b"Invalid protocol revision",
+            b"Requested level too high",
+            b"Too many clients connected",
+            b"CID/PID was suspended",
         )[int(self)]

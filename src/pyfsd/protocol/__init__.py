@@ -91,7 +91,4 @@ class LineProtocol(LineReceiver):
                 join_lines(*lines, newline=auto_newline),
             )
         else:
-            for line in lines:
-                self.transport.write(
-                    (line + self.delimiter) if auto_newline else line,
-                )
+            self.transport.writelines(line + self.delimiter for line in lines)

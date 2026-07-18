@@ -1,17 +1,17 @@
 """PyFSD client protocol."""
 
 import asyncio
+import dataclasses
 from collections.abc import Awaitable, Callable
-from inspect import isawaitable
+from functools import wraps
 from typing import (
     TYPE_CHECKING,
-    Concatenate,
     TypeVar,
     cast,
 )
 
 from structlog import get_logger
-from typing_extensions import ParamSpec
+from typing_extensions import assert_never
 
 from pyfsd._version import version as pyfsd_version
 from pyfsd.define.broadcast import (
@@ -23,21 +23,35 @@ from pyfsd.define.broadcast import (
     broadcast_message_checker,
     broadcast_position_checker,
     create_broadcast_range_checker,
-    is_multicast,
 )
-from pyfsd.define.errors import FSDClientError
-from pyfsd.define.packet import (
-    CLIENT_USED_COMMAND,
-    FSDClientCommand,
-    break_packet,
-    make_packet,
+from pyfsd.define.protocol import FSDClientCommand
+from pyfsd.define.protocol.errors import FSDClientError
+from pyfsd.define.protocol.packet import (
+    AddATCPacket,
+    AddPilotPacket,
+    ATCPositionPacket,
+    ClientBoundPacket,
+    CloudPacket,
+    ErrorPacket,
+    FlightPlanPacket,
+    KillPacket,
+    MulticastPacket,
+    PilotPositionPacket,
+    RemoveClientPacket,
+    ReplyAcarsPacket,
+    RequestAcarsPacket,
+    ServerBoundPacket,
+    ServerClientQueryPacket,
+    ServerPingPacket,
+    TempPacket,
+    WeatherQueryPacket,
+    WindPacket,
+    try_parse,
 )
 from pyfsd.define.utils import (
     is_callsign_valid,
     logged_task,
     mustdone_task_keeper,
-    str_to_float,
-    str_to_int,
 )
 from pyfsd.object.client import Client
 
@@ -47,85 +61,46 @@ if TYPE_CHECKING:
     from pyfsd.factory.client import ClientFactory
     from pyfsd.plugin import PluginHandledEventResult, PyFSDHandledEventResult
 
+version_bytes = ("PyFSD " + pyfsd_version).encode("ascii")
 logger = get_logger(__name__)
-P = ParamSpec("P")
-T = TypeVar("T")
-HandleResult = tuple[bool, bool]  # (packet_ok, has_result)
 
 __all__ = ["ClientProtocol", "check_packet"]
 
-version = pyfsd_version.encode("ascii")
-
-
+HandleResult = tuple[bool, bool]  # (packet_ok, has_result)
 _T_ClientProtocol = TypeVar("_T_ClientProtocol", bound="ClientProtocol")
+_T_ServerBoundPacket = TypeVar("_T_ServerBoundPacket", bound=ServerBoundPacket)
+_PacketHandler = Callable[
+    [_T_ClientProtocol, _T_ServerBoundPacket], Awaitable[HandleResult]
+]
 
 
 def check_packet(
-    require_parts: int,
-    callsign_position: int = 0,
-    *,
     check_callsign: bool = True,
     need_login: bool = True,
 ) -> Callable[
-    [
-        Callable[
-            Concatenate[_T_ClientProtocol, tuple[bytes, ...], P],
-            Awaitable[HandleResult] | HandleResult,
-        ]
-    ],
-    Callable[
-        Concatenate[_T_ClientProtocol, tuple[bytes, ...], P], Awaitable[HandleResult]
-    ],
+    [_PacketHandler[_T_ClientProtocol, _T_ServerBoundPacket]],
+    _PacketHandler[_T_ClientProtocol, _T_ServerBoundPacket],
 ]:
-    """Create a decorator to auto check packet format and ensure awaitable.
-
-    Designed for ClientProtocol's handlers.
+    """Create a decorator to perform misc checks.
 
     Args:
-        require_parts: How many parts required.
-
-                #AA1012:gamecss:mentally broken
-                [0    ] [1    ] [2            ] => 3 parts
-        callsign_position: Which part contains callsign, used when (need_login and
-            check_callsign). For example:
-
-                #AA1012:gamecss:mentally broken
-                [0    ] [1    ] [2            ]
-
-            Here parts[0] is the callsign, so `callsign_position` is 0.
-        need_login: Need self.client is not None (logined) or not.
-        check_callsign: Check packet[callsign_position] == self.client.callsign or not.
+        need_login: Checks if self.client is not None (logined).
+        check_callsign: Checks if packet.source == self.client.callsign
     """
 
-    def decorator(
-        func: Callable[
-            Concatenate[_T_ClientProtocol, tuple[bytes, ...], P],
-            Awaitable[HandleResult] | HandleResult,
-        ],
-    ) -> Callable[
-        Concatenate[_T_ClientProtocol, tuple[bytes, ...], P],
-        Awaitable[HandleResult],
-    ]:
+    def decorator(func: _PacketHandler) -> _PacketHandler:
+        @wraps(func)
         async def realfunc(
-            self: _T_ClientProtocol,
-            packet: tuple[bytes, ...],
-            /,
-            *args: P.args,
-            **kwargs: P.kwargs,
+            self: "ClientProtocol",
+            packet: ServerBoundPacket,
         ) -> HandleResult:
-            if len(packet) < require_parts:
-                self.send_error(FSDClientError.SYNTAX)
-                return (False, False)
             if need_login:
                 if self.client is None:
                     return (False, False)
-                if check_callsign and self.client.callsign != packet[callsign_position]:
-                    self.send_error(FSDClientError.SRCINVALID, env=packet[0])
+                if check_callsign and self.client.callsign != packet.source:
+                    self.send_error(FSDClientError.SRCINVALID, env=packet.source)
                     return (False, False)
-            result = func(self, packet, *args, **kwargs)
-            if isawaitable(result):
-                return await result
-            return result
+            return await func(self, packet)
 
         return realfunc
 
@@ -171,24 +146,32 @@ class ClientProtocol(LineProtocol):
                 self.kill_after_1sec()
                 continue
 
-            # sentinel value used by connection_lost()
-            if line is None:
+            if line is None:  # sentinel value used in connection_lost()
                 break
+            if not line:
+                continue
+
+            # TODO: currently if the packet cannot be parsed, plugin will not know it.
+            # should tweak somehow later
+            packet = try_parse(line)
+            if not packet:
+                self.send_error(FSDClientError.SYNTAX)
+                continue
 
             # First try to let plugins to process
             plugin_result = await self.factory.plugin_manager.trigger_event_handlers(
-                "line_received_from_client",
-                (self, line),
+                "packet_received",
+                (self, packet),
                 {},
             )
             if plugin_result is None:  # Not handled by plugin
-                packet_ok, has_result = await self.handle_line(line)
+                packet_ok, has_result = await self.handle_packet(packet)
                 result = cast(
                     "PyFSDHandledEventResult",
                     {
                         "handled_by_plugin": False,
                         "success": packet_ok and has_result,
-                        "packet": line,
+                        "packet": packet,
                         "packet_ok": packet_ok,
                         "has_result": has_result,
                     },
@@ -197,8 +180,8 @@ class ClientProtocol(LineProtocol):
                 result = plugin_result
 
             self.factory.plugin_manager.trigger_event_auditers_nonblock(
-                "line_received_from_client",
-                (self, line, result),
+                "packet_received",
+                (self, packet, result),
                 {},
             )
 
@@ -214,9 +197,7 @@ class ClientProtocol(LineProtocol):
             return
 
         self.factory.transports.append(transport)
-        self.worker_task = logged_task(
-            asyncio.create_task(self.handle_line_worker_func())
-        )
+        self.worker_task = asyncio.create_task(self.handle_line_worker_func())
 
         def worker_done(task: asyncio.Task) -> None:
             self.worker_task = None
@@ -230,9 +211,10 @@ class ClientProtocol(LineProtocol):
                 self.get_description(),
                 exc_info=exc,
             )
-            self.send_lines(
-                make_packet(
-                    FSDClientCommand.MESSAGE + b"server",
+            self.send_packets(
+                MulticastPacket(
+                    FSDClientCommand.MESSAGE,
+                    b"server",
                     self.client.callsign if self.client is not None else b"unknown",
                     b"internal server error",
                 ),
@@ -258,13 +240,9 @@ class ClientProtocol(LineProtocol):
         client = None
         if self.client is not None:
             self.factory.broadcast(
-                make_packet(
-                    (
-                        FSDClientCommand.REMOVE_ATC
-                        if self.client.is_controller
-                        else FSDClientCommand.REMOVE_PILOT
-                    )
-                    + self.client.callsign,
+                RemoveClientPacket(
+                    self.client.is_controller,
+                    self.client.callsign,
                     self.client.cid.encode(),
                 ),
                 from_client=self.client,
@@ -280,7 +258,10 @@ class ClientProtocol(LineProtocol):
 
         self.factory.plugin_manager.trigger_event_auditers_nonblock(
             "client_disconnected",
-            (self, client),
+            (
+                self,
+                client,
+            ),
             {},
         )
 
@@ -312,6 +293,12 @@ class ClientProtocol(LineProtocol):
 
         return cast("str", self.transport.get_extra_info("peername")[0])
 
+    def send_packets(self, *packets: ClientBoundPacket) -> None:
+        """Send multiple packets."""
+        self.send_lines(
+            *(packet.pack() for packet in packets), auto_newline=True, together=True
+        )
+
     def send_error(
         self, errno: FSDClientError, *, env: bytes = b"", fatal: bool = False
     ) -> None:
@@ -324,31 +311,27 @@ class ClientProtocol(LineProtocol):
             env: The error env.
             fatal: Disconnect after the error is sent or not.
         """
-        error_string = str(errno)
-        self.send_lines(
-            make_packet(
-                FSDClientCommand.ERROR + b"server",
+        self.send_packets(
+            ErrorPacket(
                 self.client.callsign if self.client is not None else b"unknown",
-                f"{int(errno):03d}".encode(),
+                errno,
                 env,
-                error_string.encode("ascii"),
-            ),
+            )
         )
         if fatal:
-            logger.info("Kicking %s: %s", self.get_description(), error_string)
+            logger.info("Kicking %s: %s", self.get_description(), str(errno))
             self.kill_after_1sec()
 
     def send_motd(self) -> None:
         """Send motd to client."""
-        if not self.client:
-            raise RuntimeError("No client registered.")
-        self.send_lines(
-            b"#TMserver:%s:PyFSD %s" % (self.client.callsign, version),
+        assert self.client is not None
+        self.send_packets(
+            MulticastPacket(
+                FSDClientCommand.MESSAGE, b"server", self.client.callsign, version_bytes
+            ),
             *(
-                make_packet(
-                    FSDClientCommand.MESSAGE + b"server",
-                    self.client.callsign,
-                    line,
+                MulticastPacket(
+                    FSDClientCommand.MESSAGE, b"server", self.client.callsign, line
                 )
                 for line in self.factory.motd
             ),
@@ -356,17 +339,13 @@ class ClientProtocol(LineProtocol):
 
     def multicast(
         self,
-        to_limiter: bytes,
-        *lines: bytes,
+        packet: MulticastPacket,
         custom_at_checker: BroadcastChecker | None = None,
     ) -> bool:
-        """Multicast lines.
+        """Multicast a packet.
 
         Args:
-            to_limiter: Dest limiter. `*` means every client, `*A` means every ATC, `*P`
-                means every pilots, `@` means client in a range (see
-                [pyfsd.define.broadcast.at_checker][])
-            lines: lines to be sent.
+            packets: The packet to be sent.
             custom_at_checker: Custom checker used when to_limiter is `@`.
 
         Returns:
@@ -375,26 +354,20 @@ class ClientProtocol(LineProtocol):
         Raises:
             NotImplementedError: When an unsupported to_limiter specified.
         """
-        if self.client is None:
-            raise RuntimeError("No client registered.")
+        assert self.client is not None
+        to_limiter = packet.dest
         if to_limiter.startswith(b"*"):
+            checker: BroadcastChecker = lambda _, __: True
             if to_limiter == b"*A":
-                return self.factory.broadcast(
-                    *lines,
-                    check_func=all_ATC_checker,
-                    from_client=self.client,
-                )
-            if to_limiter == b"*P":
-                return self.factory.broadcast(
-                    *lines,
-                    check_func=all_pilot_checker,
-                    from_client=self.client,
-                )
-            # Default checker is lambda: True, so send to all client
-            return self.factory.broadcast(*lines, from_client=self.client)
+                checker = all_ATC_checker
+            elif to_limiter == b"*P":
+                checker = all_pilot_checker
+            return self.factory.broadcast(
+                packet, from_client=self.client, check_func=checker
+            )
         if to_limiter.startswith(b"@"):
             return self.factory.broadcast(
-                *lines,
+                packet,
                 from_client=self.client,
                 check_func=custom_at_checker
                 if custom_at_checker is not None
@@ -402,130 +375,43 @@ class ClientProtocol(LineProtocol):
             )
         raise NotImplementedError
 
-    def handle_cast(
+    @check_packet()
+    async def handle_cast(
         self,
-        packet: tuple[bytes, ...],
-        command: FSDClientCommand,
-        *,
-        require_parts: int = 2,
-        multicast_able: bool = True,
-        custom_at_checker: BroadcastChecker | None = None,
+        packet: MulticastPacket,
     ) -> HandleResult:
-        """Handle a (multi/uni)cast request.
+        """Handle a multicast or unicast request."""
+        assert self.client is not None
 
-        Args:
-            packet: format: `(command)(self_callsign):(to_callsign):(multicast content)`
-                Note that to_callsign could be multicast sign (`*A`, `*P`, etc.)
-                if multicast_able.
-            command: The packet's command.
-            require_parts: How many parts required.
-
-                    #AA1012:gamecss:happy lunar new year
-                    [0    ] [1    ] [2                 ] => 3 parts
-
-            multicast_able: to_callsign can be multicast sign or not.
-                if not multicast_able and to_callsign is multicast sign, this function
-                will send nothing and exit with False, False.
-            custom_at_checker: Custom checker used when to_callsign is `@`.
-        """
-        # Check common things first
-        packet_len: int = len(packet)
-        if packet_len < require_parts:
-            self.send_error(FSDClientError.SYNTAX)
-            return False, False
-        if self.client is None:
-            return False, False
-        if self.client.callsign != packet[0]:
-            self.send_error(FSDClientError.SRCINVALID, env=packet[0])
-            return False, False
-
-        to_callsign = packet[1]
-        # Prepare packet to be sent.
-        to_packet = make_packet(
-            command + self.client.callsign,
-            to_callsign,
-            *packet[2:] if packet_len > 2 else [b""],
+        # to simulate a FSD quirk
+        to_packet = (
+            dataclasses.replace(packet, data=b"") if packet.data is None else packet
         )
-
-        if is_multicast(to_callsign):
-            if multicast_able:
+        if packet.dest.startswith(b"*") or packet.dest.startswith(b"@"):  # multicast
+            if packet.can_multicast():
                 return True, self.multicast(
-                    to_callsign,
                     to_packet,
-                    custom_at_checker=custom_at_checker,
+                    custom_at_checker=broadcast_message_checker
+                    if packet.command is FSDClientCommand.MESSAGE
+                    else None,
                 )
             # Not allowed to multicast, so packet_ok is False
             return False, False
         return True, self.factory.send_to(
-            to_callsign,
+            to_packet.dest,
             to_packet,
         )
 
-    @check_packet(7, need_login=False)
-    async def handle_add_client(
-        self,
-        packet: tuple[bytes, ...],
-        is_AA: bool,
+    async def check_auth(
+        self, cid: bytes, password: bytes, req_rating: int
     ) -> HandleResult:
-        """Handle add client request.
-
-        Args:
-            packet: The packet.
-            is_AA: True if this packet is #AA (add atc), else #AP
-        """
-        if self.client is not None:
-            self.send_error(FSDClientError.REGISTERED)
-            return False, False
-        if is_AA:
-            # controller
-            (
-                callsign,
-                _,
-                realname,
-                cid,
-                password,
-                req_rating,
-                protocol,
-            ) = packet[:7]
-            sim_type_int = -1
-        else:
-            # pilot
-            if len(packet) < 8:
-                self.send_error(FSDClientError.SYNTAX)
-                return False, False
-            (
-                callsign,
-                _,
-                cid,
-                password,
-                req_rating,
-                protocol,
-                sim_type,
-                realname,
-            ) = packet[:8]
-            sim_type_int = str_to_int(sim_type, default_value=0)
-        if len(req_rating) == 0:
-            req_rating_int = 1
-        else:
-            req_rating_int = str_to_int(req_rating, default_value=0)
-        protocol_int = str_to_int(protocol, default_value=-1)
-        if not is_callsign_valid(callsign):
-            self.send_error(FSDClientError.CSINVALID, fatal=True)
-            return False, False
-        if protocol_int != 9:
-            self.send_error(FSDClientError.REVISION, fatal=True)
-            return False, False
+        """Verify cid & password & rating."""
         try:
             cid_str = cid.decode("utf-8")
             pwd_str = password.decode("utf-8")
         except UnicodeDecodeError:
             self.send_error(FSDClientError.CIDINVALID, env=cid, fatal=True)
             return False, False
-
-        if callsign in self.factory.clients:
-            self.send_error(FSDClientError.CSINUSE, fatal=True)
-            return True, False
-
         rating = await self.factory.check_auth(cid_str, pwd_str)
         if rating is None:
             self.send_error(FSDClientError.CIDINVALID, env=cid, fatal=True)
@@ -533,139 +419,90 @@ class ClientProtocol(LineProtocol):
         if rating == 0:
             self.send_error(FSDClientError.CSSUSPEND, fatal=True)
             return True, False
-        if rating < req_rating_int:
+        if rating < req_rating:
             self.send_error(
                 FSDClientError.LEVEL,
-                env=req_rating,
+                env=b"%d" % req_rating,
                 fatal=True,
             )
             return True, False
+        return True, True
+
+    async def handle_add_client(
+        self, packet: AddATCPacket | AddPilotPacket
+    ) -> HandleResult:
+        """Handle add client request."""
+        if self.client is not None:
+            self.send_error(FSDClientError.REGISTERED)
+            return False, False
+        if not is_callsign_valid(packet.source):
+            self.send_error(FSDClientError.CSINVALID, fatal=True)
+            return False, False
+        if packet.protocol != 9:
+            self.send_error(FSDClientError.REVISION, fatal=True)
+            return False, False
+        if packet.source in self.factory.clients:
+            self.send_error(FSDClientError.CSINUSE, fatal=True)
+            return True, False
+        assert packet.password is not None
+        if not (
+            result := await self.check_auth(packet.cid, packet.password, packet.rating)
+        )[1]:
+            return result
+        is_controller = packet.COMMAND is FSDClientCommand.ADD_ATC
         client = Client(
-            is_AA,
-            callsign,
-            req_rating_int,
-            cid_str,
-            protocol_int,
-            realname,
-            sim_type_int,
+            is_controller,
+            packet.source,
+            packet.rating,
+            packet.cid.decode("utf-8"),
+            packet.protocol,
+            packet.realname,
+            getattr(packet, "simtype", -1),
             self.transport,
         )
-        self.factory.clients[callsign] = client
+        self.factory.clients[packet.source] = client
         self.client = client
-        if is_AA:
-            self.factory.broadcast(
-                make_packet(
-                    FSDClientCommand.ADD_ATC + callsign,
-                    b"SERVER",
-                    realname,
-                    cid,
-                    b"",
-                    req_rating,
-                ),
-                from_client=client,
-            )
-        else:
-            self.factory.broadcast(
-                # two times of req_rating... FSD does :(
-                make_packet(
-                    FSDClientCommand.ADD_PILOT + callsign,
-                    b"SERVER",
-                    cid,
-                    b"",
-                    req_rating,
-                    req_rating,
-                    b"%d" % sim_type_int,
-                ),
-                from_client=client,
-            )
+        self.factory.broadcast(
+            dataclasses.replace(packet, password=None), from_client=client
+        )
         self.send_motd()
         await logger.ainfo(f"New client {self.get_description()}.")
         self.factory.plugin_manager.trigger_event_auditers_nonblock(
-            "new_client_created", (self,), {}
+            "new_client_created", (self.client,), {}
         )
         return True, True
 
-    @check_packet(1)
-    def handle_remove_client(self, _: tuple[bytes, ...]) -> HandleResult:
+    @check_packet()
+    async def handle_remove_client(self, _: RemoveClientPacket) -> HandleResult:
         """Handle remove client request."""
         assert self.client is not None
-        logger.info("Kicking %s: client asked to remove", self.get_description())
+        await logger.ainfo("Kicking %s: client asked to remove", self.get_description())
         self.kill_after_1sec()
         return True, True
 
-    @check_packet(17)
-    def handle_plan(self, packet: tuple[bytes, ...]) -> HandleResult:
+    @check_packet()
+    async def handle_plan(self, packet: FlightPlanPacket) -> HandleResult:
         """Handle plan update request."""
         assert self.client is not None
-        (
-            plan_type,
-            aircraft,
-            tascruise,
-            dep_airport,
-            dep_time,
-            act_dep_time,
-            alt,
-            dest_airport,
-            hrs_enroute,
-            min_enroute,
-            hrs_fuel,
-            min_fuel,
-            alt_airport,
-            remarks,
-            route,
-        ) = packet[2:17]
-        plan_type = plan_type[0:1]
-        tascruise_int = str_to_int(tascruise, default_value=0)
-        dep_time_int = str_to_int(dep_time, default_value=0)
-        act_dep_time_int = str_to_int(act_dep_time, default_value=0)
-        hrs_enroute_int = str_to_int(hrs_enroute, default_value=0)
-        min_enroute_int = str_to_int(min_enroute, default_value=0)
-        hrs_fuel_int = str_to_int(hrs_fuel, default_value=0)
-        min_fuel_int = str_to_int(min_fuel, default_value=0)
         self.client.update_plan(
-            plan_type,
-            aircraft,
-            tascruise_int,
-            dep_airport,
-            dep_time_int,
-            act_dep_time_int,
-            alt,
-            dest_airport,
-            hrs_enroute_int,
-            min_enroute_int,
-            hrs_fuel_int,
-            min_fuel_int,
-            alt_airport,
-            remarks,
-            route,
+            packet.type,
+            packet.aircraft,
+            packet.tascruise,
+            packet.depairport,
+            packet.deptime,
+            packet.actdeptime,
+            packet.alt,
+            packet.destairport,
+            packet.hrsenroute,
+            packet.minenroute,
+            packet.hrsfuel,
+            packet.minfuel,
+            packet.altairport,
+            packet.remarks,
+            packet.route,
         )
         self.factory.broadcast(
-            # Another FSD quirk: truncated if plan_type is empty
-            make_packet(
-                FSDClientCommand.PLAN + self.client.callsign,
-                b"*A",
-                b"",
-            )
-            if len(plan_type) == 0
-            else make_packet(
-                FSDClientCommand.PLAN + self.client.callsign,
-                b"*A",
-                plan_type,
-                aircraft,
-                tascruise,
-                dep_airport,
-                dep_time,
-                act_dep_time,
-                alt,
-                dest_airport,
-                hrs_enroute,
-                min_enroute,
-                hrs_fuel,
-                min_fuel,
-                alt_airport,
-                remarks,
-                route,
-            ),
+            dataclasses.replace(packet, dest=b"*A"),
             check_func=broadcast_checkers(
                 all_ATC_checker, create_broadcast_range_checker(400)
             ),
@@ -673,326 +510,202 @@ class ClientProtocol(LineProtocol):
         )
         return True, True
 
-    @check_packet(10, callsign_position=1)
-    def handle_pilot_position_update(
+    @check_packet()
+    async def handle_pilot_position_update(
         self,
-        packet: tuple[bytes, ...],
+        packet: PilotPositionPacket,
     ) -> HandleResult:
         """Handle pilot position update request."""
         assert self.client is not None
-        (
-            mode,
-            _,
-            transponder,
-            _,
-            lat,
-            lon,
-            altitdue,
-            groundspeed,
-            pbh,
-            flags,
-        ) = packet[:10]
-        transponder_int = str_to_int(transponder, default_value=0)
-        lat_float = str_to_float(lat, default_value=0.0)
-        lon_float = str_to_float(lon, default_value=0.0)
-        altitdue_int = str_to_int(altitdue, default_value=0)
-        pbh_int = str_to_int(pbh, default_value=0) & 0xFFFFFFFF  # Simulate unsigned
-        groundspeed_int = str_to_int(groundspeed, default_value=0)
-        flags_int = str_to_int(flags, default_value=0)
-        if (
-            lat_float > 90.0
-            or lat_float < -90.0
-            or lon_float > 180.0
-            or lon_float < -180.0
-        ):
-            logger.debug(
+        if not (-90 <= packet.lat <= 90 and -180 <= packet.lon <= 180):
+            await logger.adebug(
                 "Got invalid position (%f, %f) from %s",
-                lat_float,
-                lon_float,
+                packet.lat,
+                packet.lon,
                 self.get_description(),
             )
         self.client.update_pilot_position(
-            mode,
-            transponder_int,
-            lat_float,
-            lon_float,
-            altitdue_int,
-            groundspeed_int,
-            pbh_int,
-            flags_int,
+            packet.ident_mode,
+            packet.squawk,
+            packet.lat,
+            packet.lon,
+            packet.altitude,
+            packet.groundspeed,
+            packet.pbh,
+            packet.flags,
         )
         self.factory.broadcast(
-            make_packet(
-                FSDClientCommand.PILOT_POSITION + mode,
-                self.client.callsign,
-                transponder,
-                b"%d" % self.client.rating,
-                b"%.5f" % lat_float,
-                b"%.5f" % lon_float,
-                altitdue,
-                groundspeed,
-                pbh,
-                flags,
-            ),
+            dataclasses.replace(packet, rating=self.client.rating),
             check_func=broadcast_position_checker,
             from_client=self.client,
         )
         return True, True
 
-    @check_packet(8)
-    def handle_ATC_position_update(
+    @check_packet()
+    async def handle_ATC_position_update(
         self,
-        packet: tuple[bytes, ...],
+        packet: ATCPositionPacket,
     ) -> HandleResult:
         """Handle ATC position update request."""
         assert self.client is not None
-        (
-            frequency,
-            facility_type,
-            visual_range,
-            _,
-            lat,
-            lon,
-            altitdue,
-        ) = packet[1:8]
-        lat_float = str_to_float(lat, default_value=0.0)
-        lon_float = str_to_float(lon, default_value=0.0)
-        frequency_int = str_to_int(frequency, default_value=0)
-        facility_type_int = str_to_int(facility_type, default_value=0)
-        visual_range_int = str_to_int(visual_range, default_value=0)
-        altitdue_int = str_to_int(altitdue, default_value=0)
-        if (
-            lat_float > 90.0
-            or lat_float < -90.0
-            or lon_float > 180.0
-            or lon_float < -180.0
-        ):
-            logger.debug(
+        if not (-90 <= packet.lat <= 90 and -180 <= packet.lon <= 180):
+            await logger.adebug(
                 "Got invalid position (%f, %f) from %s",
-                lat_float,
-                lon_float,
+                packet.lat,
+                packet.lon,
                 self.get_description(),
             )
         self.client.update_ATC_position(
-            frequency_int,
-            facility_type_int,
-            visual_range_int,
-            lat_float,
-            lon_float,
-            altitdue_int,
+            packet.frequency,
+            packet.facility,
+            packet.visualrange,
+            packet.lat,
+            packet.lon,
+            packet.altitude,
         )
         self.factory.broadcast(
-            make_packet(
-                FSDClientCommand.ATC_POSITION + self.client.callsign,
-                frequency,
-                facility_type,
-                visual_range,
-                b"%d" % self.client.rating,
-                b"%.5f" % lat_float,
-                b"%.5f" % lon_float,
-                altitdue,
-            ),
+            dataclasses.replace(packet, rating=self.client.rating),
             check_func=broadcast_position_checker,
             from_client=self.client,
         )
         return True, True
 
-    @check_packet(2)
-    def handle_server_ping(self, packet: tuple[bytes, ...]) -> HandleResult:
+    @check_packet()
+    async def handle_server_ping(self, packet: ServerPingPacket) -> HandleResult:
         """Handle server ping request."""
         assert self.client is not None
-        self.send_line(
-            make_packet(
-                FSDClientCommand.PONG + b"server",
+        self.send_packets(
+            MulticastPacket(
+                FSDClientCommand.PONG,
+                b"server",
                 self.client.callsign,
-                *packet[2:] if len(packet) > 2 else [b""],
-            ),
+                packet.data if packet.data is not None else b"",
+            )
         )
         return True, True
 
-    @check_packet(3)
+    @check_packet()
     async def handle_weather(
         self,
-        packet: tuple[bytes, ...],
+        packet: WeatherQueryPacket,
     ) -> HandleResult:
         """Handle weather request."""
         assert self.client is not None
         metar = await self.factory.metar_manager.fetch(
-            packet[2].decode("ascii", "ignore")
+            packet.which.decode("ascii", "ignore")
         )
         if not metar:
-            self.send_error(FSDClientError.NOWEATHER, env=packet[2])
+            self.send_error(FSDClientError.NOWEATHER, env=packet.which)
             return True, False
         profile = metar.clone()
         profile.fix(self.client.position)
 
-        self.send_lines(
-            make_packet(
-                FSDClientCommand.TEMP_DATA + b"server",
-                self.client.callsign,
-                *(b"%d:%d" % (temp.ceiling, temp.temp) for temp in profile.temps),
-                b"%d" % profile.barometer,
-            ),
-            make_packet(
-                FSDClientCommand.WIND_DATA + b"server",
-                self.client.callsign,
-                *(
-                    b"%d:%d:%d:%d:%d:%d"
-                    % (
-                        wind.ceiling,
-                        wind.floor,
-                        wind.direction,
-                        wind.speed,
-                        wind.gusting,
-                        wind.turbulence,
-                    )
-                    for wind in profile.winds
-                ),
-            ),
-            make_packet(
-                FSDClientCommand.CLOUD_DATA + b"server",
-                self.client.callsign,
-                *(
-                    b"%d:%d:%d:%d:%d"
-                    % (
-                        cloud.ceiling,
-                        cloud.floor,
-                        cloud.coverage,
-                        cloud.icing,
-                        cloud.turbulence,
-                    )
-                    for cloud in (*profile.clouds, profile.tstorm)
-                ),
-                b"%.2f" % profile.visibility,
+        self.send_packets(
+            TempPacket(self.client.callsign, profile.temps, profile.barometer),
+            WindPacket(self.client.callsign, profile.winds),
+            CloudPacket(
+                self.client.callsign, profile.clouds, profile.tstorm, profile.visibility
             ),
         )
 
         return True, True
 
-    @check_packet(3)
+    @check_packet()
     async def handle_acars(
         self,
-        packet: tuple[bytes, ...],
+        packet: RequestAcarsPacket,
     ) -> HandleResult:
         """Handle acars request."""
         assert self.client is not None
 
-        if packet[2].upper() == b"METAR" and len(packet) > 3:
+        if packet.query_type.upper() == b"METAR" and packet.which is not None:
             metar = await self.factory.metar_manager.fetch(
-                packet[3].decode(errors="ignore")
+                packet.which.decode(errors="ignore")
             )
 
             if metar is None:
-                self.send_error(FSDClientError.NOWEATHER, env=packet[3])
+                self.send_error(FSDClientError.NOWEATHER, env=packet.which)
                 return True, False
 
-            self.send_line(
-                make_packet(
-                    FSDClientCommand.REPLY_ACARS + b"server",
-                    self.client.callsign,
-                    b"METAR",
-                    metar.metar.encode("ascii"),
-                ),
+            self.send_packets(
+                ReplyAcarsPacket(
+                    self.client.callsign, b"METAR", metar.metar.encode("ascii")
+                )
             )
             return True, True
         return True, True  # yep
 
-    @check_packet(3)
-    def handle_client_query(self, packet: tuple[bytes, ...]) -> HandleResult:
-        """Handle $CQ request."""
+    @check_packet(check_callsign=False)
+    async def handle_server_client_query(
+        self, packet: ServerClientQueryPacket
+    ) -> HandleResult:
+        """Handle $CQ:server request."""
         # Behavior may differ from FSD.
         assert self.client is not None
-        if packet[1].upper() != b"SERVER":
-            # Multicast a message.
-            return self.handle_cast(
-                packet,
-                FSDClientCommand.CLIENT_QUERY,
-                require_parts=3,
-                multicast_able=True,
-            )
-        if packet[2].lower() == b"fp":
+        if packet.query_type.lower() == b"fp":
             # Get flight plan.
-            if len(packet) < 4:
+            if packet.who is None:
                 self.send_error(FSDClientError.SYNTAX)
                 return True, False
-            callsign = packet[3]
-            if (client := self.factory.clients.get(callsign)) is None:
-                self.send_error(FSDClientError.NOSUCHCS, env=callsign)
+            if (client := self.factory.clients.get(packet.who)) is None:
+                self.send_error(FSDClientError.NOSUCHCS, env=packet.who)
                 return True, False
             if (plan := client.flight_plan) is None:
                 self.send_error(FSDClientError.NOFP)
                 return True, False
             if not self.client.is_controller:
                 return False, False
-            self.send_line(
-                make_packet(
-                    FSDClientCommand.PLAN + callsign,
-                    self.client.callsign,
-                    plan.type,
-                    plan.aircraft,
-                    b"%d" % plan.tascruise,
-                    plan.dep_airport,
-                    b"%d" % plan.dep_time,
-                    b"%d" % plan.act_dep_time,
-                    plan.alt,
-                    plan.dest_airport,
-                    b"%d" % plan.hrs_enroute,
-                    b"%d" % plan.min_enroute,
-                    b"%d" % plan.hrs_fuel,
-                    b"%d" % plan.min_fuel,
-                    plan.alt_airport,
-                    plan.remarks,
-                    plan.route,
-                ),
-            )
-        elif packet[2].upper() == b"RN":
-            # TODO: Implementation maybe incorrect
-            # Get realname?
-            callsign = packet[1]
-            if (client := self.factory.clients.get(callsign)) is not None:
-                self.send_line(
-                    make_packet(
-                        FSDClientCommand.CLIENT_RESPONSE + callsign,
-                        self.client.callsign,
-                        b"RN",
-                        client.realname,
-                        b"USER",
-                        b"%d" % client.rating,
-                    ),
+            self.send_packets(
+                FlightPlanPacket.from_flight_plan(
+                    packet.who, self.client.callsign, plan
                 )
+            )
+        elif packet.query_type.upper() == b"RN":
+            # Now we're going to query SERVER's realname, idk why but original FSD would do this quirk
+            callsign = b"SERVER"
+            if (client := self.factory.clients.get(callsign)) is not None:
+                self.send_packets(
+                    MulticastPacket(
+                        FSDClientCommand.CLIENT_RESPONSE,
+                        callsign,
+                        self.client.callsign,
+                        b"RN:%s:USER:%d" % (client.realname, client.rating),
+                    )
+                )
+
                 return True, True
             return True, False
         return True, True
 
-    @check_packet(3, check_callsign=False)
-    def handle_kill(self, packet: tuple[bytes, ...]) -> HandleResult:
+    @check_packet(check_callsign=False)
+    async def handle_kill(self, packet: KillPacket) -> HandleResult:
         """Handle kill request."""
         assert self.client is not None
-        _, callsign_kill, reason = packet[:3]
-        if callsign_kill not in self.factory.clients:
-            self.send_error(FSDClientError.NOSUCHCS, env=callsign_kill)
+        if packet.who not in self.factory.clients:
+            self.send_error(FSDClientError.NOSUCHCS, env=packet.who)
             return True, False
         if self.client.rating < 11:
-            self.send_line(
-                make_packet(
-                    FSDClientCommand.MESSAGE + b"server",
+            self.send_packets(
+                MulticastPacket(
+                    FSDClientCommand.MESSAGE,
+                    b"server",
                     self.client.callsign,
                     b"You are not allowed to kill users!",
-                ),
+                )
             )
             return True, False
-        self.send_line(
-            make_packet(
-                FSDClientCommand.MESSAGE + b"server",
+        self.send_packets(
+            MulticastPacket(
+                FSDClientCommand.MESSAGE,
+                b"server",
                 self.client.callsign,
-                b"Attempting to kill %s" % callsign_kill,
-            ),
+                b"Attempting to kill %s" % packet.who,
+            )
         )
         self.factory.send_to(
-            callsign_kill,
-            make_packet(FSDClientCommand.KILL + b"SERVER", callsign_kill, reason),
+            packet.who, KillPacket(b"SERVER", packet.who, packet.reason)
         )
-        client_to_kill = self.factory.clients[callsign_kill]
+        client_to_kill = self.factory.clients[packet.who]
         transport_to_kill = client_to_kill.transport
 
         if isinstance(
@@ -1001,10 +714,10 @@ class ClientProtocol(LineProtocol):
             description = protocol_to_kill.get_description()
             kill_it = protocol_to_kill.kill_after_1sec
         else:
-            ip_kill = self.factory.clients[callsign_kill].transport.get_extra_info(
+            ip_kill = self.factory.clients[packet.who].transport.get_extra_info(
                 "peername"
             )[0]
-            description = f"{ip_kill}({callsign_kill.decode(errors='replace')})"
+            description = f"{ip_kill}({packet.who.decode(errors='replace')})"
 
             def kill_it() -> None:
                 async def killer() -> None:
@@ -1021,105 +734,33 @@ class ClientProtocol(LineProtocol):
         kill_it()
         return True, True
 
-    async def handle_line(
+    async def handle_packet(
         self,
-        byte_line: bytes,
+        packet: ServerBoundPacket,
     ) -> HandleResult:
-        """Handle a line."""
-        if len(byte_line) == 0:
-            return True, True
-        command, packet = break_packet(byte_line, CLIENT_USED_COMMAND)
-        if command is None:
-            self.send_error(FSDClientError.SYNTAX)
-            return False, False
-        if command is FSDClientCommand.ADD_ATC or command is FSDClientCommand.ADD_PILOT:
-            return await self.handle_add_client(
-                packet, command is FSDClientCommand.ADD_ATC
-            )
-        if command is FSDClientCommand.PLAN:
-            return await self.handle_plan(packet)
-        if (
-            command is FSDClientCommand.REMOVE_ATC
-            or command is FSDClientCommand.REMOVE_PILOT
-        ):
-            return await self.handle_remove_client(packet)
-        if command is FSDClientCommand.PILOT_POSITION:
-            return await self.handle_pilot_position_update(packet)
-        if command is FSDClientCommand.ATC_POSITION:
-            return await self.handle_ATC_position_update(packet)
-        if command is FSDClientCommand.PONG:
-            return self.handle_cast(
-                packet,
-                command,
-                require_parts=2,
-                multicast_able=True,
-            )
-        if command is FSDClientCommand.PING:
-            if len(packet) > 1 and packet[1].lower() == b"server":
+        """Handle a packet."""
+        match packet:
+            case AddATCPacket() | AddPilotPacket():
+                return await self.handle_add_client(packet)
+            case FlightPlanPacket():
+                return await self.handle_plan(packet)
+            case RemoveClientPacket():
+                return await self.handle_remove_client(packet)
+            case PilotPositionPacket():
+                return await self.handle_pilot_position_update(packet)
+            case ATCPositionPacket():
+                return await self.handle_ATC_position_update(packet)
+            case MulticastPacket():
+                return await self.handle_cast(packet)
+            case WeatherQueryPacket():
+                return await self.handle_weather(packet)
+            case RequestAcarsPacket():
+                return await self.handle_acars(packet)
+            case ServerClientQueryPacket():
+                return await self.handle_server_client_query(packet)
+            case ServerPingPacket():
                 return await self.handle_server_ping(packet)
-            return self.handle_cast(
-                packet,
-                command,
-                require_parts=2,
-                multicast_able=True,
-            )
-
-        if command is FSDClientCommand.MESSAGE:
-            return self.handle_cast(
-                packet,
-                command=command,
-                require_parts=3,
-                multicast_able=True,
-                custom_at_checker=broadcast_message_checker,
-            )
-        if (
-            command is FSDClientCommand.REQUEST_HANDOFF
-            or command is FSDClientCommand.ACCEPT_HANDOFF
-        ):
-            return self.handle_cast(
-                packet,
-                command,
-                require_parts=3,
-                multicast_able=False,
-            )
-        if (
-            command is FSDClientCommand.SQUAWK_BOX
-            or command is FSDClientCommand.PRO_CONTROLLER
-        ):
-            return self.handle_cast(
-                packet,
-                command,
-                require_parts=2,
-                multicast_able=False,
-            )
-        if command is FSDClientCommand.WEATHER:
-            return await self.handle_weather(packet)
-        if command is FSDClientCommand.REQUEST_COMM:
-            return self.handle_cast(
-                packet,
-                command,
-                require_parts=2,
-                multicast_able=False,
-            )
-        if command is FSDClientCommand.REPLY_COMM:
-            return self.handle_cast(
-                packet,
-                command,
-                require_parts=3,
-                multicast_able=False,
-            )
-        if command is FSDClientCommand.REQUEST_ACARS:
-            return await self.handle_acars(packet)
-        if command is FSDClientCommand.CLIENT_RESPONSE:
-            return self.handle_cast(
-                packet,
-                command,
-                require_parts=4,
-                multicast_able=False,
-            )
-        if command is FSDClientCommand.CLIENT_QUERY:
-            return await self.handle_client_query(packet)
-        if command is FSDClientCommand.KILL:
-            return await self.handle_kill(packet)
-        self.send_error(FSDClientError.SYNTAX)
-        return False, False
+            case KillPacket():
+                return await self.handle_kill(packet)
+            case _:
+                assert_never(packet)

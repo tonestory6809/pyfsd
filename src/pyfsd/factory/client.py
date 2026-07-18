@@ -17,7 +17,7 @@ from structlog import get_logger
 from typing_extensions import NotRequired, TypedDict
 
 from pyfsd.db_tables import users_table
-from pyfsd.define.packet import FSDClientCommand, make_packet
+from pyfsd.define.protocol.packet import ClientBoundPacket, WindDeltaPacket
 from pyfsd.define.utils import join_lines, logged_task
 from pyfsd.protocol.client import ClientProtocol
 
@@ -106,11 +106,10 @@ class ClientFactory:
         """Send heartbeat to clients."""
         random_int: int = randint(-214743648, 2147483647)
         self.broadcast(
-            make_packet(
-                FSDClientCommand.WIND_DELTA + b"SERVER",
+            WindDeltaPacket(
                 b"*",
-                b"%d" % (random_int % 11 - 5),
-                b"%d" % (random_int % 21 - 10),
+                random_int % 11 - 5,
+                random_int % 21 - 10,
             ),
         )
 
@@ -120,7 +119,7 @@ class ClientFactory:
 
     def broadcast(
         self,
-        *lines: bytes,
+        *packets: ClientBoundPacket,
         check_func: "BroadcastChecker" = lambda _, __: True,
         auto_newline: bool = True,
         from_client: Optional["Client"] = None,
@@ -128,7 +127,7 @@ class ClientFactory:
         """Broadcast a message.
 
         Args:
-            lines: Lines to be broadcasted.
+            packets: Packets to be broadcasted.
             check_func: Function to check if message should be sent to a client.
             auto_newline: Auto put newline marker between lines or not.
             from_client: Where the message from.
@@ -137,7 +136,7 @@ class ClientFactory:
             Lines sent to at least one client or not.
         """
         have_one = False
-        data = join_lines(*lines, newline=auto_newline)
+        data = join_lines(*(p.pack() for p in packets), newline=auto_newline)
         for client in self.clients.values():
             if client is from_client:
                 continue
@@ -149,9 +148,9 @@ class ClientFactory:
         return have_one
 
     def send_to(
-        self, callsign: bytes, *lines: bytes, auto_newline: bool = True
+        self, callsign: bytes, *packets: ClientBoundPacket, auto_newline: bool = True
     ) -> bool:
-        """Send lines to a specified client.
+        """Send packets to a specified client.
 
         Args:
             callsign: The client's callsign.
@@ -161,7 +160,7 @@ class ClientFactory:
         Returns:
             Is there a client called {callsign} (and is message sent or not).
         """
-        data = join_lines(*lines, newline=auto_newline)
+        data = join_lines(*(p.pack() for p in packets), newline=auto_newline)
         try:
             self.clients[callsign].transport.write(data)
         except KeyError:
