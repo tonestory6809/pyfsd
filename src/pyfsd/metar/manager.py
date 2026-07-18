@@ -1,6 +1,6 @@
 """PyFSD metar manager."""
 
-from asyncio import CancelledError, create_task
+from asyncio import create_task
 from asyncio import sleep as asleep
 from typing import (
     TYPE_CHECKING,
@@ -153,10 +153,7 @@ class MetarManager:
                 await logger.aerror(
                     f"Metar fetcher {name} doesn't work because {err!s}"
                 )
-            except (KeyboardInterrupt, CancelledError):
-                raise
-            # ruff: noqa: BLE001
-            except BaseException:
+            except Exception:  # noqa: BLE001
                 await logger.aexception("Exception raised when caching metar")
             else:
                 if metars is not None:
@@ -210,13 +207,11 @@ class MetarManager:
                 metar = await fetcher(self.config, icao)
                 if metar is not None:
                     return metar
-            except (KeyboardInterrupt, CancelledError):
-                raise
             except (VerifyKeyError, VerifyTypeError) as err:
                 await logger.aerror(
                     f"Metar fetcher {name} doesn't work because {err!s}"
                 )
-            except BaseException:
+            except Exception:  # noqa: BLE001
                 await logger.aexception("Exception raised when fetching metar")
         return None
 

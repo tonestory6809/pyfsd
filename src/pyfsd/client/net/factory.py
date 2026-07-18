@@ -1,6 +1,6 @@
 """Protocol factory -- client."""
 
-from asyncio import CancelledError, create_task
+from asyncio import create_task
 from asyncio import sleep as asleep
 from hashlib import sha256
 from random import randint
@@ -143,9 +143,7 @@ class ClientFactory:
                 continue
             try:
                 client.session.send_packets(*packets)
-            except (KeyboardInterrupt, CancelledError):
-                raise
-            except BaseException as err:  # noqa: BLE001
+            except Exception as err:  # noqa: BLE001
                 logger.debug(
                     "Failed to send packets",
                     exc_info=err,
@@ -169,9 +167,7 @@ class ClientFactory:
             return False
         try:
             client.session.send_packets(*packets)
-        except (KeyboardInterrupt, CancelledError):
-            raise
-        except BaseException as err:  # noqa: BLE001
+        except Exception as err:  # noqa: BLE001
             logger.debug(
                 "Failed to send packets",
                 exc_info=err,

@@ -232,9 +232,7 @@ class PluginManager:
             try:
                 if handlers := await plugin.setup():
                     plugins_handlers[plugin] = handlers
-            except (KeyboardInterrupt, CancelledError):
-                raise
-            except BaseException:
+            except Exception:
                 await logger.aexception(
                     f"Error happened when loading plugin {plugin.name}",
                 )
@@ -297,9 +295,7 @@ class PluginManager:
                     handled_by_plugin=True,
                     plugin=plugin,
                 )
-            except (KeyboardInterrupt, CancelledError):
-                raise
-            except BaseException:
+            except Exception:
                 await logger.aexception(
                     f"Error happened when calling plugin {plugin.name}",
                 )
@@ -318,9 +314,7 @@ class PluginManager:
         async def auditer_runner(auditer: Callable[..., Awaitable], name: str) -> None:
             try:
                 await auditer(*args, **kwargs)
-            except (KeyboardInterrupt, CancelledError):
-                raise
-            except BaseException:
+            except Exception:
                 await logger.aexception(f"Error happened when calling plugin {name}")
 
         # run auditers together since we don't expect response from them
