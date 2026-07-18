@@ -10,7 +10,7 @@ Example:
 
 from collections.abc import Callable
 
-from pyfsd.object.client import Client
+from pyfsd.client.object import Client
 
 from .utils import calc_distance
 

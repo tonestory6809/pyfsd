@@ -24,7 +24,7 @@ from typing_extensions import ParamSpec
 if TYPE_CHECKING:
     from asyncio import Task
 
-    from pyfsd.object.client import Position
+    from pyfsd.client.object import Position
 
 __all__ = [
     "MRand",

@@ -19,17 +19,18 @@ from typing_extensions import NotRequired, TypedDict
 from pyfsd.db_tables import users_table
 from pyfsd.define.protocol.packet import ClientBoundPacket, WindDeltaPacket
 from pyfsd.define.utils import logged_task
-from pyfsd.protocol.client import ClientProtocol
+
+from .protocol import ClientProtocol
 
 if TYPE_CHECKING:
     from asyncio import Task
 
     from sqlalchemy.ext.asyncio import AsyncEngine
 
+    from pyfsd.client.object import Client
+    from pyfsd.client.session import ClientSession
     from pyfsd.define.broadcast import BroadcastChecker
-    from pyfsd.factory.session import ClientSession
     from pyfsd.metar.manager import MetarManager
-    from pyfsd.object.client import Client
     from pyfsd.plugin.manager import PluginManager
 
 __all__ = ["ClientFactory"]

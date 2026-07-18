@@ -2,6 +2,7 @@
 
 from unittest import TestCase
 
+from pyfsd.client.object import FlightPlan
 from pyfsd.define.protocol import FSDClientCommand
 from pyfsd.define.protocol.errors import FSDClientError
 from pyfsd.define.protocol.packet import (
@@ -26,7 +27,6 @@ from pyfsd.define.protocol.packet import (
     try_parse,
 )
 from pyfsd.metar.profile import CloudLayer, TempLayer, WindLayer
-from pyfsd.object.client import FlightPlan
 
 
 class TestPacket(TestCase):

@@ -14,7 +14,7 @@ from metar.Metar import Metar
 from pyfsd.define.simulation import Int32MRand
 
 if TYPE_CHECKING:
-    from pyfsd.object.client import Position
+    from pyfsd.client.object import Position
 
 mrand = Int32MRand()
 

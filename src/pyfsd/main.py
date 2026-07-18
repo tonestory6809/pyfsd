@@ -29,11 +29,11 @@ from structlog import get_logger
 from typing_extensions import NotRequired, TypedDict
 
 from ._version import version
+from .client.net.factory import PyFSDClientConfig
 from .db_tables import metadata
 from .define.check_dict import assert_dict
 from .define.utils import logged_task, mustdone_task_keeper, task_keeper
 from .dependencies import Container
-from .factory.client import PyFSDClientConfig
 from .metar.manager import PyFSDMetarConfig, suppress_metar_parser_warning
 from .setup_logger import PyFSDLoggerConfig, redirect_to_logger, setup_logger
 

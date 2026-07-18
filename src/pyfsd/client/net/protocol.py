@@ -14,6 +14,7 @@ from structlog import get_logger
 from typing_extensions import assert_never
 
 from pyfsd._version import version as pyfsd_version
+from pyfsd.client.object import Client
 from pyfsd.define.broadcast import (
     BroadcastChecker,
     all_ATC_checker,
@@ -53,13 +54,12 @@ from pyfsd.define.utils import (
     logged_task,
     mustdone_task_keeper,
 )
-from pyfsd.object.client import Client
-
-from . import LineProtocol
+from pyfsd.protocol import LineProtocol
 
 if TYPE_CHECKING:
-    from pyfsd.factory.client import ClientFactory
     from pyfsd.plugin import PluginHandledEventResult, PyFSDHandledEventResult
+
+    from .factory import ClientFactory
 
 version_bytes = ("PyFSD " + pyfsd_version).encode("ascii")
 logger = get_logger(__name__)

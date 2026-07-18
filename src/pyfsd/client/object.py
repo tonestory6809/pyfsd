@@ -6,7 +6,7 @@ from time import time
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from pyfsd.factory.session import ClientSession
+    from pyfsd.client.session import ClientSession
 
 __all__ = ["Client", "FlightPlan", "Position"]
 

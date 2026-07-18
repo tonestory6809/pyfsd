@@ -13,7 +13,7 @@ from . import SPLIT_SIGN, FSDClientCommand
 from .errors import FSDClientError
 
 if TYPE_CHECKING:
-    from pyfsd.object.client import FlightPlan
+    from pyfsd.client.object import FlightPlan
 
 __all__ = [
     "ATCPositionPacket",

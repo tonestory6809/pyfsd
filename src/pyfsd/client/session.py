@@ -1,9 +1,11 @@
+"""Client session."""
+
 from typing import TYPE_CHECKING, Protocol
 
 from pyfsd.define.protocol.packet import ClientBoundPacket
 
 if TYPE_CHECKING:
-    from pyfsd.object.client import Client
+    from pyfsd.client.object import Client
 
 __all__ = ["ClientSession"]
 

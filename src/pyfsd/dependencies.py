@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from dependency_injector import containers, providers
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from .factory.client import ClientFactory
+from .client.net.factory import ClientFactory
 from .metar.manager import MetarManager
 from .plugin.manager import PluginManager
 

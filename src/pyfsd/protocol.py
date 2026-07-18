@@ -1,4 +1,4 @@
-"""PyFSD protocols."""
+"""Basic protocols."""
 
 from abc import ABCMeta, abstractmethod
 from asyncio import Protocol
