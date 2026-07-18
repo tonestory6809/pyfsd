@@ -1,5 +1,5 @@
 [build-system]
-requires = ["pdm-backend", "versioneer[toml]>=0.29" ]
+requires = ["pdm-backend"]
 build-backend = "pdm.backend"
 
 [project]
@@ -29,12 +29,12 @@ dependencies = [
     "haversine>=2.9.0",
     "tomli>=2.4.1; python_version < \"3.11\"",
     "metar>=2.0.1",
-    "sqlalchemy[asyncio]>=2.0.49",
-    "aiohttp>=3.13.5",
-    "typing-extensions>=4.15.0",
+    "sqlalchemy[asyncio]>=2.0.51",
+    "aiohttp>=3.14.1",
+    "typing-extensions>=4.16.0",
     "argon2-cffi>=25.1.0",
-    "dependency-injector>=4.49.0",
-    "structlog>=25.5.0",
+    "dependency-injector>=4.49.1",
+    "structlog>=26.1.0",
     "colorama>=0.4.6; sys_platform == \"win32\"",
     "better-exceptions>=0.3.3",
     "uvloop>=0.22.1; sys_platform != \"win32\"",
@@ -58,7 +58,7 @@ mysql = [
     "asyncmy>=0.2.11",
 ]
 oracle = [
-    "oracledb>=4.0.0",
+    "oracledb>=4.0.2",
 ]
 mssql = [
     "aioodbc>=0.5.0",
@@ -73,18 +73,20 @@ excludes = ["src/pyfsd/plugins/*", "**/.mypy_cache"]
 start = "python -m pyfsd"
 
 [tool.pdm.version]
-source = "call"
-getter = "versioneer:get_version"
+source = "scm"
 write_to = "pyfsd/_version.py"
 write_template = "version = \"{}\"\n"
 
 [tool.pyright]
 exclude = [
     "**/__pycache__",
-    "__pypackages__",
+    "**/.*",
     ".venv",
     ".git",
 ]
+pythonVersion = "3.10"
+enableTypeIgnoreComments = true
+reportUnnecessaryTypeIgnoreComment = "warning"
 
 [tool.ruff]
 target-version = "py310"
@@ -121,14 +123,14 @@ ignore_missing_imports = true
 
 [dependency-groups]
 dev = [
-    "mypy>=2.1.0",
-    "ruff>=0.15.13",
-    "hypothesis>=6.152.7",
-    "codespell>=2.4.2",
+    "mypy>=2.3.0",
+    "ruff>=0.15.22",
+    "hypothesis>=6.156.6",
+    "codespell>=2.4.3",
 ]
 docs = [
-    "mkdocs-material>=9.7.6",
-    "mkdocstrings[python]>=1.0.4",
+    "mkdocs-material>=9.7.7",
+    "mkdocstrings[python]>=1.0.6",
     "mkdocs-minify-plugin>=0.8.0",
     "markdown-callouts>=0.4.0",
     "mkdocs>=1.6.1",
