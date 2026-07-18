@@ -61,10 +61,11 @@ if TYPE_CHECKING:
 
     from .factory import ClientFactory
 
+TIMEOUT = 500
 version_bytes = ("PyFSD " + pyfsd_version).encode("ascii")
 logger = get_logger(__name__)
 
-__all__ = ["ClientProtocol", "check_packet"]
+__all__ = ["TIMEOUT", "ClientProtocol", "check_packet"]
 
 HandleResult = tuple[bool, bool]  # (packet_ok, has_result)
 _T_ClientProtocol = TypeVar("_T_ClientProtocol", bound="ClientProtocol")
@@ -365,7 +366,7 @@ class ClientProtocol(LineProtocol):
 
         while True:
             try:
-                line = await asyncio.wait_for(self.worker_queue.get(), 500)
+                line = await asyncio.wait_for(self.worker_queue.get(), TIMEOUT)
             except asyncio.TimeoutError:
                 self.send_line(b"# Timeout")
                 await logger.ainfo(f"Kicking {self.get_description()}: timeout")
