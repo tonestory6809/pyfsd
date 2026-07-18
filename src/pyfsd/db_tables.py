@@ -16,7 +16,7 @@ metadata = MetaData()
 users_table = Table(
     "users",
     metadata,
-    Column("callsign", String, primary_key=True),
-    Column("password", String(32)),
+    Column("callsign", String(255), primary_key=True),
+    Column("password", String(255)),
     Column("rating", Integer()),
 )

@@ -8,13 +8,13 @@ from typing import (
     TYPE_CHECKING,
     NoReturn,
     Optional,
-    TypedDict,
     cast,
 )
 
 from argon2 import PasswordHasher, exceptions
 from sqlalchemy import select, update
 from structlog import get_logger
+from typing_extensions import NotRequired, TypedDict
 
 from pyfsd.db_tables import users_table
 from pyfsd.define.packet import FSDClientCommand, make_packet
@@ -39,6 +39,7 @@ SHA256_HEX_LENGTH = 64
 
 class PyFSDClientConfig(TypedDict):
     port: int
+    host: NotRequired[list[str] | str]
     motd: str
     motd_encoding: str
     blacklist: list
@@ -196,7 +197,7 @@ class ClientFactory:
         hashed, rating = cast("tuple[str, int]", infos[0])
 
         # =============== Check if hash is sha256
-        if len(hashed) == SHA256_HEX_LENGTH:
+        if not hashed.startswith("$argon2"):
             if sha256(password.encode()).hexdigest() == hashed:  # correct
                 # Now we have the plain password, save it as argon2
                 new_hashed = self.password_hasher.hash(password)

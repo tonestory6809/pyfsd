@@ -136,6 +136,7 @@ async def launch(config: RootPyFSDConfig, *, wait_all_tasks_done: bool = True) -
     client_server = await loop.create_server(
         container.client_factory(),
         port=config["pyfsd"]["client"]["port"],
+        host=config["pyfsd"]["client"].get("host", None),
     )
     await container.plugin_manager().trigger_event_auditers("before_start", (), {})
     await logger.ainfo(f"PyFSD {version}")
