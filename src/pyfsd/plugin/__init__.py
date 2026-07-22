@@ -145,8 +145,6 @@ class Plugin:
 class StubPlugin(Plugin):
     """Stub plugin that does nothing."""
 
-    # TODO: Currently we have to copy these attributes until python 3.10
-    # see github issue microsoft/vscode-python#20378
     name: str
     api: tuple[int, int]
     version: tuple[int, str]

@@ -1,5 +1,6 @@
 """A tool used to convert users database in other format into PyFSD's format."""
 
+import sys
 from argparse import ArgumentParser
 
 from argon2 import PasswordHasher
@@ -12,10 +13,10 @@ from pyfsd.define.check_dict import assert_dict
 
 from .formats import formats
 
-try:
-    import tomllib  # type: ignore[import, unused-ignore]
-except ImportError:
-    import tomli as tomllib  # type: ignore[import, no-redef, unused-ignore]
+if sys.version_info >= (3, 11):
+    from tomllib import load
+else:
+    from tomli import load  # type: ignore[import-not-found, unused-ignore]
 
 
 def main() -> None:
@@ -38,7 +39,7 @@ def main() -> None:
     args = parser.parse_args()
 
     with open(args.config_path, "rb") as config_file:
-        config = tomllib.load(config_file)
+        config = load(config_file)
 
     assert_dict(
         config,

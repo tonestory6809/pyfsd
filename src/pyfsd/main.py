@@ -4,6 +4,7 @@ Attributes:
     DEFAULT_CONFIG (str): Default config of PyFSD.
 """
 
+import sys
 from argparse import ArgumentParser
 from asyncio import (
     AbstractEventLoop,
@@ -37,11 +38,10 @@ from .dependencies import Container
 from .metar.manager import PyFSDMetarConfig, suppress_metar_parser_warning
 from .setup_logger import PyFSDLoggerConfig, redirect_to_logger, setup_logger
 
-try:
-    from tomllib import loads  # type: ignore[import-not-found,unused-ignore]
-except ImportError:
-    # Python 3.11+
-    from tomli import loads  # type: ignore[no-redef,import-not-found,unused-ignore]
+if sys.version_info >= (3, 11):
+    from tomllib import loads
+else:
+    from tomli import loads  # type: ignore[import-not-found, unused-ignore]
 
 
 class PyFSDDatabaseConfig(TypedDict, extra_items=object):  # type: ignore[call-arg]
