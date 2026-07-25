@@ -666,8 +666,6 @@ class ClientProtocol(LineProtocol):
             if (plan := client.flight_plan) is None:
                 self.send_error(FSDClientError.NOFP)
                 return True, False
-            if not self.client.is_controller:
-                return False, False
             self.send_packets(
                 FlightPlanPacket.from_flight_plan(
                     packet.who, self.client.callsign, plan
