@@ -143,7 +143,7 @@ class ClientFactory:
                 continue
             try:
                 client.session.send_packets(*packets)
-            except Exception as err:  # noqa: BLE001
+            except Exception as err:
                 logger.debug(
                     "Failed to send packets",
                     exc_info=err,
@@ -167,7 +167,7 @@ class ClientFactory:
             return False
         try:
             client.session.send_packets(*packets)
-        except Exception as err:  # noqa: BLE001
+        except Exception as err:
             logger.debug(
                 "Failed to send packets",
                 exc_info=err,
