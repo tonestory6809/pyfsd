@@ -4,6 +4,7 @@ Attributes:
     DEFAULT_CONFIG (str): Default config of PyFSD.
 """
 
+import signal
 import sys
 from argparse import ArgumentParser
 from asyncio import (
@@ -22,7 +23,6 @@ from asyncio import (
 from asyncio import (
     new_event_loop as aio_new_event_loop,
 )
-from signal import SIGINT
 from typing import cast
 
 from dependency_injector.wiring import register_loader_containers
@@ -222,7 +222,9 @@ def main() -> None:
     # =============== Startup
     loop: AbstractEventLoop
     try:
-        from uvloop import new_event_loop as uv_new_event_loop
+        from uvloop import (  # type: ignore[import-not-found, unused-ignore]
+            new_event_loop as uv_new_event_loop,
+        )
 
         loop = uv_new_event_loop()
     except ImportError:
@@ -232,7 +234,7 @@ def main() -> None:
 
     sigint_count = 0
 
-    def sigint_handler() -> None:
+    def sigint_handler(_: object, __: object) -> None:
         nonlocal sigint_count
         if sigint_count:
             raise KeyboardInterrupt()
@@ -242,7 +244,7 @@ def main() -> None:
 
     main_task = loop.create_task(launch(cast("RootPyFSDConfig", config)))
 
-    loop.add_signal_handler(SIGINT, sigint_handler)
+    signal.signal(signal.SIGINT, sigint_handler)
     try:
         loop.run_until_complete(main_task)
     except CancelledError:
