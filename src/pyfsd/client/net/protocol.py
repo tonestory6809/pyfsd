@@ -378,11 +378,17 @@ class ClientProtocol(LineProtocol):
             if not line:
                 continue
 
-            # TODO: currently if the packet cannot be parsed, plugin will not know it.
-            # should tweak somehow later
             packet = try_parse(line)
             if not packet:
-                self.send_error(FSDClientError.SYNTAX)
+                plugin_result = (
+                    await self.factory.plugin_manager.trigger_event_handlers(
+                        "protocol_9_unparsed_packet",
+                        (self, line),
+                        {},
+                    )
+                )
+                if not plugin_result:
+                    self.send_error(FSDClientError.SYNTAX)
                 continue
 
             # First try to let plugins to process
@@ -391,20 +397,19 @@ class ClientProtocol(LineProtocol):
                 (self, packet),
                 {},
             )
-            if plugin_result is None:  # Not handled by plugin
+            if plugin_result is not None:
+                result = plugin_result
+            else:  # Not handled by plugin
                 packet_ok, has_result = await self.handle_packet(packet)
                 result = cast(
                     "PyFSDHandledEventResult",
                     {
                         "handled_by_plugin": False,
                         "success": packet_ok and has_result,
-                        "packet": packet,
                         "packet_ok": packet_ok,
                         "has_result": has_result,
                     },
                 )
-            else:
-                result = plugin_result
 
             self.factory.plugin_manager.trigger_event_auditers_nonblock(
                 "packet_received",

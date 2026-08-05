@@ -69,7 +69,8 @@ class EventHandlersDict(  # type: ignore[call-arg]
 ):
     """Event handlers."""
 
-    packet_received: _IterableEventHandlers[["Client", "ServerBoundPacket"]]
+    packet_received: _IterableEventHandlers[["ClientSession", "ServerBoundPacket"]]
+    protocol_9_unparsed_packet: _IterableEventHandlers[["ClientSession", bytes]]
 
 
 class EventAuditersDict(  # type: ignore[call-arg]
@@ -77,10 +78,12 @@ class EventAuditersDict(  # type: ignore[call-arg]
     extra_items=_IterableEventHandlers[...],
     total=False,
 ):
-    client_disconnected: _IterableEventHandlers[["ClientSession", "Client"]]
+    """Event auditers."""
+
+    client_disconnected: _IterableEventHandlers[["ClientSession", "Client | None"]]
     new_connection_established: _IterableEventHandlers[["ClientSession"]]
     packet_received: _IterableEventHandlers[
-        ["Client", "ServerBoundPacket", "EventResult"]
+        ["ClientSession", "ServerBoundPacket", "EventResult"]
     ]
     new_client_created: _IterableEventHandlers[["Client"]]
     before_start: _IterableEventHandlers[[]]
@@ -180,6 +183,10 @@ class SimplePlugin(Plugin):
         self, event: Literal["packet_received"]
     ) -> _EventHandlerDecorator[["ClientSession", "ServerBoundPacket"]]: ...
     @overload
+    def handle(
+        self, event: Literal["protocol_9_unparsed_packet"]
+    ) -> _EventHandlerDecorator[["ClientSession", bytes]]: ...
+    @overload
     def handle(self, event: str) -> _EventHandlerDecorator[...]: ...
 
     def handle(self, event: str) -> _EventHandlerDecorator[...]:
@@ -197,7 +204,7 @@ class SimplePlugin(Plugin):
     @overload
     def audit(
         self, event: Literal["client_disconnected"]
-    ) -> _EventHandlerDecorator[["ClientSession", "Client"]]: ...
+    ) -> _EventHandlerDecorator[["ClientSession", "Client | None"]]: ...
     @overload
     def audit(
         self, event: Literal["new_connection_established"]
