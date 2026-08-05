@@ -115,7 +115,7 @@ def setup_logger(config: PyFSDLoggerConfig, *, finalize: bool = False) -> None:
                         dev.ConsoleRenderer(
                             colors=False,
                             exception_formatter=dev.better_traceback
-                            if not finalize
+                            if not finalize and not sys.version_info >= (3, 14)
                             else dev.plain_traceback,
                         ),
                     ],
@@ -129,7 +129,7 @@ def setup_logger(config: PyFSDLoggerConfig, *, finalize: bool = False) -> None:
                         dev.ConsoleRenderer(
                             colors=True,
                             exception_formatter=dev.better_traceback
-                            if not finalize
+                            if not finalize and not sys.version_info >= (3, 14)
                             else dev.plain_traceback,
                         ),
                     ],
