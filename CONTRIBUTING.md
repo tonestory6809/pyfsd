@@ -59,55 +59,42 @@ Don't bother updating the changelog, we will take care of this.
 ## Commit message convention
 
 Commit messages must follow our convention based on the
-[Angular style](https://gist.github.com/stephenparish/9941e89d80e2bc58a153#format-of-the-commit-message)
-or the [Karma convention](https://karma-runner.github.io/4.0/dev/git-commit-msg.html):
+[Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/)
+
+The commit message should be structured as follows:
+
+---
 
 ```
-<type>[(scope)]: Subject
+<type>[optional scope]: <description>
 
-[Body]
+[optional body]
+
+[optional footer(s)]
 ```
+---
 
-**Subject and body must be valid Markdown.**
-Subject must have proper casing (uppercase for first letter
-if it makes sense), but no dot at the end, and no punctuation
-in general.
+<br />
+The commit contains the following structural elements, to communicate intent to the
+consumers of your library:
 
-Scope and body are optional. Type can be:
+1. **fix:** a commit of the _type_ `fix` patches a bug in your codebase (this correlates with [`PATCH`](http://semver.org/#summary) in Semantic Versioning).
+1. **feat:** a commit of the _type_ `feat` introduces a new feature to the codebase (this correlates with [`MINOR`](http://semver.org/#summary) in Semantic Versioning).
+1. **BREAKING CHANGE:** a commit that has a footer `BREAKING CHANGE:`, or appends a `!` after the type/scope, introduces a breaking API change (correlating with [`MAJOR`](http://semver.org/#summary) in Semantic Versioning).
+A BREAKING CHANGE can be part of commits of any _type_.
+1. _types_ other than `fix:` and `feat:` are allowed, for example [@commitlint/config-conventional](https://github.com/conventional-changelog/commitlint/tree/master/%40commitlint/config-conventional) (based on the [Angular convention](https://github.com/angular/angular/blob/22b96b9/CONTRIBUTING.md#-commit-message-guidelines)) recommends `build:`, `chore:`,
+  `ci:`, `docs:`, `style:`, `refactor:`, `perf:`, `test:`, and others.
+1. _footers_ other than `BREAKING CHANGE: <description>` may be provided and follow a convention similar to
+  [git trailer format](https://git-scm.com/docs/git-interpret-trailers).
 
-- `build`: About packaging, building wheels, etc.
-- `chore`: About packaging or repo/files management.
-- `ci`: About Continuous Integration.
-- `deps`: Dependencies update.
-- `docs`: About documentation.
-- `feat`: New feature.
-- `fix`: Bug fix.
-- `perf`: About performance.
-- `refactor`: Changes that are not features or bug fixes.
-- `style`: A change in code style/format.
-- `tests`: About tests.
+Additional types are not mandated by the Conventional Commits specification, and have no implicit effect in Semantic Versioning (unless they include a BREAKING CHANGE).
+<br /><br />
+A scope may be provided to a commit's type, to provide additional contextual information and is contained within parenthesis, e.g., `feat(parser): add ability to parse arrays`.
 
-If you write a body, please add trailers at the end
-(for example issues and PR references, or co-authors),
-without relying on GitHub's flavored Markdown:
+> This section is adapted from the Conventional Commits specification,
+> Copyright (c) 2018 Conventional Changelog. Licensed under the 
+> [MIT License](https://github.com/conventional-commits/conventionalcommits.org/blob/master/LICENSE)
 
-```
-Body.
-
-Issue #10: https://github.com/namespace/project/issues/10
-Related to PR namespace/other-project#15: https://github.com/namespace/other-project/pull/15
-```
-
-These "trailers" must appear at the end of the body,
-without any blank lines between them. The trailer title
-can contain any character except colons `:`.
-We expect a full URI for each trailer, not just GitHub autolinks
-(for example, full GitHub URLs for commits and issues,
-not the hash or the #issue-number).
-
-We do not enforce a line length on commit messages summary and body,
-but please avoid very long summaries, and very long lines in the body,
-unless they are part of code blocks that must not be wrapped.
 
 ## Pull requests guidelines
 
