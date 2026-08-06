@@ -5,13 +5,16 @@ from math import sqrt
 from time import time
 from typing import TYPE_CHECKING
 
+from pyfsd.define.utils import calc_distance
+
 if TYPE_CHECKING:
     from pyfsd.client.session import ClientSession
 
 __all__ = ["Client", "FlightPlan", "Position"]
 
 Position = tuple[float, float]
-INVALID_ALTITUDE = 100000
+MAX_FREQUENCY = 100000
+UNINITIALIZED = type("tuple_sentinel", (tuple,), {})((0, 0))
 
 
 @dataclass(slots=True)
@@ -52,7 +55,7 @@ class Client:
     realname: bytes
     sim_type: int
     session: "ClientSession"
-    position: Position = (0, 0)
+    position: Position = UNINITIALIZED
     transponder: int = 0
     altitude: int = 0
     ground_speed: int = 0
@@ -70,12 +73,12 @@ class Client:
     @property
     def position_ok(self) -> bool:
         """The position is valid or not."""
-        return self.position != (0, 0) and self.altitude < INVALID_ALTITUDE
+        return self.position is not UNINITIALIZED
 
     @property
     def frequency_ok(self) -> bool:
         """The frequency is valid or not."""
-        return self.frequency != 0 and self.frequency < INVALID_ALTITUDE
+        return self.frequency != 0 and self.frequency < MAX_FREQUENCY
 
     def update_plan(
         self,
@@ -182,3 +185,9 @@ class Client:
             return 1500
         # Unknown
         return 40
+
+    def distance_to(self, other: "Client") -> float:
+        """Calculate distance to another client. -1 when position is invalid."""
+        if not self.position_ok or not other.position_ok:
+            return float("inf")
+        return calc_distance(self.position, other.position)

@@ -12,8 +12,6 @@ from collections.abc import Callable
 
 from pyfsd.client.object import Client
 
-from .utils import calc_distance
-
 __all__ = [
     "BroadcastChecker",
     "all_ATC_checker",
@@ -41,11 +39,10 @@ def create_broadcast_range_checker(visual_range: int) -> BroadcastChecker:
 
     def checker(from_client: Client | None, to_client: Client) -> bool:
         if from_client is None:
-            raise RuntimeError("broadcast_range_checker needs from_client")
+            raise RuntimeError("broadcast_range_checker requires from_client")
         if not from_client.position_ok or not to_client.position_ok:
             return False
-        distance = calc_distance(from_client.position, to_client.position)
-        return distance <= visual_range
+        return to_client.distance_to(from_client) <= visual_range
 
     return checker
 
@@ -64,7 +61,7 @@ def broadcast_position_checker(
         The check result (send message to to_client or not).
     """
     if from_client is None:
-        raise RuntimeError("broadcast_position_checker needs from_client")
+        raise RuntimeError("broadcast_position_checker requires from_client")
     if not from_client.position_ok or not to_client.position_ok:
         return False
     visual_range: int
@@ -76,8 +73,7 @@ def broadcast_position_checker(
         visual_range = x + y
     else:
         visual_range = max(x, y)
-    distance = calc_distance(from_client.position, to_client.position)
-    return distance <= visual_range
+    return to_client.distance_to(from_client) <= visual_range
 
 
 def broadcast_message_checker(from_client: Client | None, to_client: Client) -> bool:
@@ -91,7 +87,7 @@ def broadcast_message_checker(from_client: Client | None, to_client: Client) -> 
         The check result (send message to to_client or not).
     """
     if from_client is None:
-        raise RuntimeError("broadcast_message_checker needs from_client")
+        raise RuntimeError("broadcast_message_checker requires from_client")
     if not from_client.position_ok or not to_client.position_ok:
         return False
     visual_range: int
@@ -101,8 +97,7 @@ def broadcast_message_checker(from_client: Client | None, to_client: Client) -> 
         visual_range = x + y
     else:
         visual_range = max(y, x)
-    distance = calc_distance(from_client.position, to_client.position)
-    return distance <= visual_range
+    return to_client.distance_to(from_client) <= visual_range
 
 
 def broadcast_checkers(*checkers: BroadcastChecker) -> BroadcastChecker:
@@ -156,11 +151,10 @@ def at_checker(from_client: Client | None, to_client: Client) -> bool:
         The check result (send message to to_client or not).
     """
     if from_client is None:
-        raise RuntimeError("at_checker needs from_client")
+        raise RuntimeError("at_checker requires from_client")
     if not from_client.position_ok or not to_client.position_ok:
         return False
-    distance = calc_distance(from_client.position, to_client.position)
-    return distance <= from_client.get_range()
+    return to_client.distance_to(from_client) <= from_client.get_range()
 
 
 def is_multicast(callsign: bytes) -> bool:
